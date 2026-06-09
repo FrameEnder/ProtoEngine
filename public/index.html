@@ -51,13 +51,13 @@
         <svg class="searchbar__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         <input class="searchbar__input" id="searchInput" type="text" placeholder="Search names, URLs, descriptions, or tags" aria-label="Search" />
         <button class="searchbar__clear" id="clearBtn" type="button" aria-label="Clear search" hidden>&times;</button>
+        <button class="searchbar__filter iconbtn" id="filterBtn" type="button" title="Filters" aria-label="Filter settings">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M3 5h18M6 12h12M10 19h4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
       </form>
     </div>
 
-    <div class="activefilter" id="activeFilter" hidden>
-      Filtering by tag
-      <button class="chip chip--active" id="activeFilterChip"></button>
-    </div>
+    <div class="activefilter" id="activeFilter" hidden></div>
 
     <section class="results" id="results" aria-live="polite"></section>
   </main>
