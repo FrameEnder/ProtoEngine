@@ -533,6 +533,59 @@ body.searching .activefilter { max-width: 650px; margin-left: 0; margin-top: 4px
 .badge--admin { background: rgba(242,139,130,0.15); color: var(--red); }
 .badge--moderator { background: rgba(253,214,99,0.15); color: var(--amber); }
 
+/* ---------- Per-user background image + glass results ---------- */
+.bglayer {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+/* A subtle dark scrim over the image so the top bar and text stay legible
+   regardless of how bright the background is. */
+.bglayer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(rgba(14,15,19,0.45), rgba(14,15,19,0.65));
+}
+/* When a background is set, the page itself is transparent so the image shows. */
+body.has-bg { background: transparent; }
+body.has-bg .topbar { background: rgba(14,15,19,0.55); backdrop-filter: blur(10px); }
+
+/* Frosted-glass panel behind the results when a background is present. */
+body.has-bg .results {
+  background: rgba(27, 29, 34, 0.55);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 22px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.4);
+}
+/* Give the glass a little breathing room from the search bar. */
+body.has-bg.searching .results { margin-top: 18px; }
+/* Active-filter chips also read better on a faint glass strip. */
+body.has-bg .activefilter {
+  background: rgba(27, 29, 34, 0.5);
+  backdrop-filter: blur(10px);
+  border-radius: 999px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255,255,255,0.07);
+}
+
+/* ---------- Account background section ---------- */
+.accountbg { display: flex; align-items: center; gap: 16px; }
+.accountbg__img {
+  width: 96px; height: 56px; border-radius: 10px; flex: none;
+  background-size: cover; background-position: center;
+  border: 1px solid var(--border);
+  display: grid; place-items: center;
+  color: var(--text-faint); font-size: 11px; overflow: hidden;
+}
+.accountbg__img--empty { background: var(--surface-2); }
+
 /* ---------- Search bar filter button ---------- */
 .searchbar__filter {
   width: 32px; height: 32px; flex: none; margin-left: 2px;
