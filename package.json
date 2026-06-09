@@ -1,0 +1,26 @@
+{
+  "name": "lumen-search",
+  "version": "1.0.0",
+  "description": "A self-hostable search engine for local, group, and project websites.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.6",
+    "csrf-csrf": "^3.0.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "express-session": "^1.18.0",
+    "helmet": "^7.1.0",
+    "multer": "^1.4.5-lts.1",
+    "session-file-store": "^1.5.0"
+  }
+}
