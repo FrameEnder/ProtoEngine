@@ -9,3 +9,5 @@ public/avatars/*
 !public/avatars/.gitkeep
 *.log
 .DS_Store
+public/backgrounds/*
+!public/backgrounds/.gitkeep
