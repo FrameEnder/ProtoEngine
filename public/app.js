@@ -22,12 +22,20 @@ const state = {
   csrf: null,
   appName: 'Lumen',
   query: '',
-  tag: '',
+  tags: [],          // active tag filters (all must match)
+  sort: 'newest',    // newest | oldest | name | name_desc
+  hasIcon: '',       // '' | 'true' | 'false'
   page: 1,
   pageCount: 1,
   matched: 0,
   sites: [],
+  allTags: null,     // cached [{tag,count}] for pickers
 };
+
+// Is any filter active (used to decide the "searching" layout)?
+function isSearching() {
+  return !!(state.query || state.tags.length || state.hasIcon || state.sort !== 'newest');
+}
 
 // ---------- API client ----------
 async function getCsrf() {
@@ -121,17 +129,16 @@ function placeSearchRow(searching) {
 function renderResults() {
   const box = $('#results');
   box.innerHTML = '';
-  const searching = !!(state.query || state.tag);
+  const searching = isSearching();
   document.body.classList.toggle('searching', searching);
   placeSearchRow(searching);
 
   if (state.sites.length === 0) {
-    const hasFilter = state.query || state.tag;
     box.append(
       el('div', { class: 'placeholder' },
-        el('strong', {}, hasFilter ? 'No matches' : 'Nothing here yet'),
-        hasFilter
-          ? 'Try a different word, or clear the tag filter.'
+        el('strong', {}, searching ? 'No matches' : 'Nothing here yet'),
+        searching
+          ? 'Try a different word, or adjust your filters.'
           : state.user
             ? 'Tap the + button up top to add the first website.'
             : 'Sign in to add the first website to this engine.'
@@ -141,7 +148,7 @@ function renderResults() {
   }
 
   // Google-style result count, shown only while searching.
-  if (state.query || state.tag) {
+  if (searching) {
     const n = state.matched;
     let label = `${n} result${n === 1 ? '' : 's'}`;
     if (state.pageCount > 1) label += ` · page ${state.page} of ${state.pageCount}`;
@@ -177,8 +184,8 @@ function renderResults() {
       const tagWrap = el('div', { class: 'result__tags' });
       for (const tag of site.tags) {
         tagWrap.append(el('button', {
-          class: 'chip' + (state.tag === tag ? ' chip--active' : ''),
-          onclick: () => filterByTag(tag),
+          class: 'chip' + (state.tags.includes(tag) ? ' chip--active' : ''),
+          onclick: () => toggleTag(tag),
         }, '#' + tag));
       }
       result.append(tagWrap);
@@ -248,27 +255,37 @@ function pageNum(p) {
 }
 
 // ---------- URL <-> state sync ----------
-// The URL is the source of truth for query, tag, and page:
-//   /search?q=self+hosted&tag=docs&p=2     (p omitted when 1)
+// The URL is the source of truth for query, tags, filters, and page:
+//   /search?q=self+hosted&tag=docs,rust&sort=name&icon=true&p=2
 //   /                                       (empty state / home)
 function readStateFromUrl() {
   const url = new URL(window.location.href);
   const onSearch = url.pathname === '/search';
-  state.query = onSearch ? (url.searchParams.get('q') || '').trim() : '';
-  state.tag = onSearch ? (url.searchParams.get('tag') || '').trim() : '';
+  if (!onSearch) {
+    state.query = ''; state.tags = []; state.sort = 'newest'; state.hasIcon = ''; state.page = 1;
+    return;
+  }
+  state.query = (url.searchParams.get('q') || '').trim();
+  const tagStr = (url.searchParams.get('tag') || '').trim();
+  state.tags = tagStr ? tagStr.split(',').map((t) => t.trim()).filter(Boolean) : [];
+  const sort = url.searchParams.get('sort') || 'newest';
+  state.sort = ['newest', 'oldest', 'name', 'name_desc'].includes(sort) ? sort : 'newest';
+  const icon = url.searchParams.get('icon');
+  state.hasIcon = (icon === 'true' || icon === 'false') ? icon : '';
   const p = parseInt(url.searchParams.get('p'), 10);
   state.page = Number.isInteger(p) && p > 0 ? p : 1;
 }
 
-// Build the URL from current state. push=true adds a history entry (for
-// committed actions like submitting, tag clicks, page changes); push=false
-// replaces it (for live typing, so back doesn't step through every keystroke).
+// Build the URL from current state. push=true adds a history entry; push=false
+// replaces it (for live typing).
 function applyStateToUrl(push) {
   let path;
-  if (state.query || state.tag) {
+  if (isSearching()) {
     const params = new URLSearchParams();
     if (state.query) params.set('q', state.query);
-    if (state.tag) params.set('tag', state.tag);
+    if (state.tags.length) params.set('tag', state.tags.join(','));
+    if (state.sort !== 'newest') params.set('sort', state.sort);
+    if (state.hasIcon) params.set('icon', state.hasIcon);
     if (state.page > 1) params.set('p', String(state.page));
     path = '/search?' + params.toString();
   } else {
@@ -285,7 +302,9 @@ let searchTimer;
 async function loadSites() {
   const params = new URLSearchParams();
   if (state.query) params.set('q', state.query);
-  if (state.tag) params.set('tag', state.tag);
+  if (state.tags.length) params.set('tag', state.tags.join(','));
+  if (state.sort !== 'newest') params.set('sort', state.sort);
+  if (state.hasIcon) params.set('hasIcon', state.hasIcon);
   params.set('page', String(state.page));
   try {
     const d = await api('/sites?' + params.toString());
@@ -293,10 +312,9 @@ async function loadSites() {
     state.page = d.page || 1;
     state.pageCount = d.pageCount || 1;
     state.matched = d.matched ?? d.sites.length;
-    // If the server clamped the page (e.g. p=99 on a 3-page result), reflect
-    // it back into the URL so it stays honest.
     applyStateToUrl(false);
     renderResults();
+    updateFilterButton();
     window.scrollTo({ top: 0, behavior: 'auto' });
   } catch (e) {
     toast(e.message, true);
@@ -311,25 +329,137 @@ function goToPage(p) {
   loadSites();
 }
 
-function filterByTag(tag) {
-  const next = state.tag === tag ? '' : tag;
-  state.tag = next;
+// Toggle a tag in the active filter set (from clicking a result chip).
+function toggleTag(tag) {
+  const i = state.tags.indexOf(tag);
+  if (i === -1) state.tags.push(tag);
+  else state.tags.splice(i, 1);
   state.page = 1;
   updateActiveFilter();
   applyStateToUrl(true);
   loadSites();
 }
 
+// Show the active tag chips below the search bar.
 function updateActiveFilter() {
   const wrap = $('#activeFilter');
-  if (state.tag) {
-    wrap.hidden = false;
-    const chip = $('#activeFilterChip');
-    chip.textContent = '#' + state.tag + '  ✕';
-    chip.onclick = () => filterByTag(state.tag);
-  } else {
-    wrap.hidden = true;
+  wrap.innerHTML = '';
+  if (!state.tags.length) { wrap.hidden = true; return; }
+  wrap.hidden = false;
+  wrap.append(el('span', { class: 'activefilter__label' }, 'Tags:'));
+  for (const t of state.tags) {
+    wrap.append(el('button', {
+      class: 'chip chip--active',
+      onclick: () => toggleTag(t),
+    }, '#' + t + '  ✕'));
   }
+}
+
+// Reflect whether any non-tag filter is active on the filter button.
+function updateFilterButton() {
+  const btn = $('#filterBtn');
+  if (!btn) return;
+  const active = state.sort !== 'newest' || !!state.hasIcon || state.tags.length > 0;
+  btn.classList.toggle('iconbtn--active', active);
+}
+
+// Fetch (and cache) all existing tags with counts.
+async function loadAllTags(force) {
+  if (state.allTags && !force) return state.allTags;
+  try {
+    const d = await api('/sites/tags');
+    state.allTags = d.tags || [];
+  } catch {
+    state.allTags = [];
+  }
+  return state.allTags;
+}
+
+// Filter settings popup: sort order, favicon presence, and tag selection,
+// all applied to the current search.
+async function openFilterModal() {
+  // Working copy so Cancel discards changes.
+  const draft = {
+    sort: state.sort,
+    hasIcon: state.hasIcon,
+    tags: [...state.tags],
+  };
+
+  const tags = await loadAllTags();
+
+  // Sort select.
+  const sortSel = el('select', {},
+    ...[
+      ['newest', 'Newest first'],
+      ['oldest', 'Oldest first'],
+      ['name', 'Name (A–Z)'],
+      ['name_desc', 'Name (Z–A)'],
+    ].map(([v, label]) => el('option', { value: v, ...(draft.sort === v ? { selected: 'selected' } : {}) }, label))
+  );
+  sortSel.addEventListener('change', () => { draft.sort = sortSel.value; });
+
+  // Favicon filter.
+  const iconSel = el('select', {},
+    ...[
+      ['', 'Any'],
+      ['true', 'Has a favicon'],
+      ['false', 'No favicon'],
+    ].map(([v, label]) => el('option', { value: v, ...(draft.hasIcon === v ? { selected: 'selected' } : {}) }, label))
+  );
+  iconSel.addEventListener('change', () => { draft.hasIcon = iconSel.value; });
+
+  // Tag picker — clickable chips, highlighted when selected.
+  const tagBox = el('div', { class: 'tagpick' });
+  function paintTags() {
+    tagBox.innerHTML = '';
+    if (!tags.length) {
+      tagBox.append(el('div', { class: 'field__hint' }, 'No tags exist yet.'));
+      return;
+    }
+    for (const { tag, count } of tags) {
+      const on = draft.tags.includes(tag);
+      tagBox.append(el('button', {
+        type: 'button',
+        class: 'chip' + (on ? ' chip--active' : ''),
+        onclick: () => {
+          const i = draft.tags.indexOf(tag);
+          if (i === -1) draft.tags.push(tag); else draft.tags.splice(i, 1);
+          paintTags();
+        },
+      }, `#${tag} · ${count}`));
+    }
+  }
+  paintTags();
+
+  const apply = el('button', { class: 'btn btn--primary' }, 'Apply filters');
+  apply.addEventListener('click', () => {
+    state.sort = draft.sort;
+    state.hasIcon = draft.hasIcon;
+    state.tags = draft.tags;
+    state.page = 1;
+    closeModal();
+    updateActiveFilter();
+    applyStateToUrl(true);
+    loadSites();
+  });
+  const reset = el('button', { class: 'btn btn--ghost' }, 'Reset');
+  reset.addEventListener('click', () => {
+    draft.sort = 'newest'; draft.hasIcon = ''; draft.tags = [];
+    sortSel.value = 'newest'; iconSel.value = '';
+    paintTags();
+  });
+
+  const body = el('div', {},
+    el('div', { class: 'field' }, el('label', {}, 'Sort by'), sortSel),
+    el('div', { class: 'field' }, el('label', {}, 'Favicon'), iconSel),
+    el('div', { class: 'field' },
+      el('label', {}, 'Filter by tags'),
+      el('div', { class: 'field__hint', style: 'margin:0 0 8px' }, 'Click to include. All selected tags must match.'),
+      tagBox),
+    el('div', { class: 'row', style: 'display:flex;gap:8px' }, reset, apply),
+  );
+
+  openModal(modalShell('Filters', body));
 }
 
 // ---------- modal plumbing ----------
@@ -415,6 +545,42 @@ function openSiteModal(site = null) {
   description.value = editing ? site.description : '';
   const tags = el('input', { type: 'text', placeholder: 'docs, internal, rust', value: editing ? (site.tags || []).join(', ') : '' });
 
+  // Picker of existing tags — click to add to the input. Helps reuse common
+  // tags and see what already exists.
+  const tagSuggest = el('div', { class: 'tagpick tagpick--suggest' });
+  function currentTagSet() {
+    return new Set(tags.value.split(',').map((t) => t.trim().toLowerCase()).filter(Boolean));
+  }
+  function paintSuggest(list) {
+    tagSuggest.innerHTML = '';
+    if (!list.length) return;
+    const have = currentTagSet();
+    let shown = 0;
+    for (const { tag, count } of list) {
+      const on = have.has(tag);
+      tagSuggest.append(el('button', {
+        type: 'button',
+        class: 'chip chip--mini' + (on ? ' chip--active' : ''),
+        onclick: () => {
+          const set = currentTagSet();
+          if (set.has(tag)) {
+            // remove it
+            const kept = [...set].filter((t) => t !== tag);
+            tags.value = kept.join(', ');
+          } else {
+            const existing = tags.value.trim();
+            tags.value = existing ? existing.replace(/,\s*$/, '') + ', ' + tag : tag;
+          }
+          paintSuggest(list);
+        },
+      }, `#${tag}`));
+      if (++shown >= 40) break; // cap to keep the picker tidy
+    }
+  }
+  // Repaint highlight as the user types.
+  tags.addEventListener('input', () => { if (state.allTags) paintSuggest(state.allTags); });
+  loadAllTags().then((list) => paintSuggest(list));
+
   const iconInput = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp,image/svg+xml,image/x-icon' });
   const preview = el('span', { class: 'iconpick__preview' });
   let removeExistingIcon = false;
@@ -448,7 +614,8 @@ function openSiteModal(site = null) {
       el('div', { class: 'field__hint' }, 'https:// is added automatically if you leave it off.')),
     el('div', { class: 'field' }, el('label', {}, 'Description'), description),
     el('div', { class: 'field' }, el('label', {}, 'Tags'), tags,
-      el('div', { class: 'field__hint' }, 'Comma-separated. Each becomes a clickable filter.')),
+      el('div', { class: 'field__hint' }, 'Comma-separated. Each becomes a clickable filter.'),
+      tagSuggest),
     el('div', { class: 'field' }, el('label', {}, 'Favicon (shown next to the listing)'), iconRow,
       el('div', { class: 'field__hint' }, 'PNG, JPG, GIF, WEBP, SVG, or ICO. Max 512 KB.')),
     msg,
@@ -469,6 +636,7 @@ function openSiteModal(site = null) {
     try {
       if (editing) await api('/sites/' + site.id, { method: 'PATCH', form: fd });
       else await api('/sites', { method: 'POST', form: fd });
+      state.allTags = null; // tags may have changed
       closeModal();
       toast(editing ? 'Listing updated.' : 'Website added.');
       loadSites();
@@ -486,6 +654,7 @@ async function deleteSite(site) {
   if (!confirm(`Delete "${site.name}" from the search engine? This cannot be undone.`)) return;
   try {
     await api('/sites/' + site.id, { method: 'DELETE' });
+    state.allTags = null;
     toast('Listing deleted.');
     loadSites();
   } catch (e) { toast(e.message, true); }
@@ -894,6 +1063,7 @@ function init() {
   });
 
   $('#addBtn').addEventListener('click', () => openSiteModal());
+  $('#filterBtn').addEventListener('click', openFilterModal);
   $('#signinBtn').addEventListener('click', () => openAuthModal('login'));
   $('#adminBtn').addEventListener('click', openAdminPanel);
 
@@ -902,10 +1072,11 @@ function init() {
   // visible wordmark while searching).
   function goHome(e) {
     if (e) e.preventDefault();
-    state.query = ''; state.tag = ''; state.page = 1;
+    state.query = ''; state.tags = []; state.sort = 'newest'; state.hasIcon = ''; state.page = 1;
     $('#searchInput').value = '';
     $('#clearBtn').hidden = true;
     updateActiveFilter();
+    updateFilterButton();
     applyStateToUrl(true);
     loadSites();
   }
@@ -972,6 +1143,7 @@ function syncInputToState() {
     $('#clearBtn').hidden = !state.query;
   }
   updateActiveFilter();
+  updateFilterButton();
 }
 
 async function bootstrap() {
