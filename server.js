@@ -161,6 +161,26 @@ const { generateToken, doubleCsrfProtection } = doubleCsrf({
   getTokenFromRequest: (req) => req.headers['x-csrf-token'],
 });
 
+// ---- CORS for API-key clients (e.g. the browser extension) ----
+// Cross-origin API access is allowed ONLY for requests that carry an
+// Authorization header (API-key / Bearer auth) or are safe GET reads. We
+// reflect the request origin and do NOT allow credentials, so cookie-based
+// sessions remain strictly same-origin (the browser UI is unaffected).
+app.use('/api', (req, res, next) => {
+  const hasBearer = (req.headers.authorization || '').startsWith('Bearer ');
+  const origin = req.headers.origin;
+  const isRead = req.method === 'GET' || req.method === 'HEAD';
+  if (origin && (hasBearer || isRead || req.method === 'OPTIONS')) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, X-CSRF-Token');
+    res.setHeader('Access-Control-Max-Age', '600');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 // Endpoint the frontend calls to obtain a CSRF token.
 app.get('/api/csrf', (req, res) => {
   res.json({ token: generateToken(req, res) });
