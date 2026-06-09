@@ -232,9 +232,22 @@ body.searching .hero__word span { animation: none; } /* no re-animate while typi
 
 body.searching .searchrow .searchbar {
   flex: 1;
+  min-width: 0;
   max-width: 620px;
   height: 44px;
   margin: 0;
+}
+/* The right-side controls must never shrink or be overlapped by the
+   search bar on narrow screens. */
+body.searching .topbar > .iconbtn,
+body.searching .topbar > .usermenu,
+body.searching .topbar > .textbtn { flex: 0 0 auto; }
+
+/* On narrower screens, keep a clear gap between the search bar and the
+   controls (add button / avatar) to its right so they don't crowd. */
+@media (max-width: 900px) {
+  body.searching .searchrow { margin-right: 14px; }
+  body.searching .searchrow .searchbar { max-width: none; }
 }
 
 /* Stage: left-aligned results column at Google's reading width. */
@@ -603,6 +616,117 @@ body.has-bg .activefilter {
 .tagpick--suggest { margin-top: 10px; max-height: 110px; }
 .chip--mini { font-size: 11px; padding: 3px 9px; }
 
+/* ---------- Account tabbed content ---------- */
+.account__content {
+  padding-top: 16px;
+  /* Fixed height so every tab is identical: shorter tabs don't shrink the
+     modal and the tallest tab (Login & security) scrolls within this area
+     rather than making the modal taller than the others. */
+  height: 440px;
+  overflow-y: auto;
+}
+
+/* ---------- RSS management (account tab) ---------- */
+.rssadd { display: flex; gap: 8px; margin-bottom: 4px; align-items: stretch; }
+.rssadd input { margin-bottom: 0; flex: 3 1 0; min-width: 0; width: auto; }
+.rssadd .btn { flex: 1 1 0; min-width: 0; white-space: nowrap; }
+.rsslist { margin-top: 8px; display: flex; flex-direction: column; gap: 10px; }
+.rssitem { border: 1px solid var(--border); border-radius: 10px; padding: 12px; }
+.rssitem__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.rssitem__title { font-weight: 600; font-size: 14px; }
+.rssitem__url {
+  color: var(--text-faint); font-size: 12px; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rssitem__toggles { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; }
+.rsstoggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-dim); cursor: pointer; }
+.rsstoggle input { width: auto; margin: 0; accent-color: var(--blue); }
+
+/* ---------- RSS side panel ---------- */
+.rsspanel {
+  position: fixed;
+  top: 70px;
+  right: 16px;
+  width: 300px;
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 15;
+  padding-bottom: 20px;
+}
+.rsspanel__head {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--text-faint);
+  padding: 2px 4px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.rsspanel__close {
+  display: none; /* shown only on small screens */
+  background: none; border: none; color: var(--text-dim);
+  font-size: 20px; line-height: 1; cursor: pointer; padding: 0 4px;
+}
+.rsscard {
+  display: block;
+  text-decoration: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  transition: border-color 0.15s, transform 0.1s, background 0.15s;
+}
+.rsscard:hover { border-color: var(--blue); transform: translateY(-1px); background: var(--surface-hover); }
+.rsscard__feed { font-size: 11px; color: var(--blue); margin-bottom: 4px; }
+.rsscard__title { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.35; }
+.rsscard__summary { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-top: 5px;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.rsscard__date { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+
+/* On a background, give the RSS cards the same frosted glass treatment. */
+body.has-bg .rsscard { background: rgba(27,29,34,0.55); backdrop-filter: blur(12px); border-color: rgba(255,255,255,0.08); }
+
+/* Floating toggle button to open the feeds panel on small screens. */
+.rsstoggle-btn {
+  display: none;
+  position: fixed;
+  right: 16px;
+  bottom: 20px;
+  z-index: 16;
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--blue);
+  color: #0b1220;
+  align-items: center; justify-content: center;
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+/*
+  The stage stays centered at all widths (margin: 0 auto from its base rule).
+  The RSS panel floats over the right margin. On wide screens there's room
+  beside the centered column; on narrow screens it becomes a slide-in drawer
+  opened by the toggle button, so it never pushes the content off-center.
+*/
+@media (max-width: 1199px) {
+  /* Hide the docked panel; show the toggle button instead. */
+  body.has-rss .rsstoggle-btn { display: flex; }
+  .rsspanel {
+    top: 0; right: 0; bottom: 0;
+    width: min(340px, 86vw);
+    max-height: 100vh;
+    background: var(--bg);
+    border-left: 1px solid var(--border);
+    padding: 16px 14px;
+    transform: translateX(105%);
+    transition: transform 0.25s ease;
+    box-shadow: -8px 0 30px rgba(0,0,0,0.5);
+  }
+  .rsspanel.rsspanel--open { transform: translateX(0); }
+  .rsspanel__close { display: block; }
+}
+
 /* ---------- Avatar images ---------- */
 .avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 
@@ -664,13 +788,25 @@ body.has-bg .activefilter {
   .stage { padding: 0 14px 60px; }
   /* On mobile the search bar lives in the top bar alongside the controls.
      Hide the small inline logo to save room; the search bar fills the row. */
-  body.searching .topbar { gap: 8px; }
+  body.searching .topbar { gap: 6px; padding-left: 10px; padding-right: 10px; }
   body.searching .hero { display: none; }
-  body.searching .searchrow .searchbar { max-width: none; }
+  body.searching .searchrow { margin-right: 6px; }
   body.searching .topbar__spacer { display: none; }
+  body.searching .searchrow .searchbar {
+    max-width: none;
+    padding: 0 12px;     /* tighter than the default 18px */
+    gap: 8px;
+  }
+  /* Compact the + button a touch so the row fits on narrow phones. */
+  body.searching .topbar > .iconbtn { width: 36px; height: 36px; }
+  body.searching .avatar { width: 34px; height: 34px; }
   body.searching .results,
   body.searching .activefilter { max-width: none; }
 }
+
+/* Allow the search input to shrink inside its bar (flex items don't shrink
+   below their content width without this), preventing overflow/overlap. */
+.searchbar__input { min-width: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
