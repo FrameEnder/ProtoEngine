@@ -65,12 +65,21 @@ function canManageSite(user, site) {
 router.get('/', async (req, res) => {
   const sites = await db.getSites();
   const q = clampStr(req.query.q, 200).toLowerCase();
-  const tag = clampStr(req.query.tag, 30).toLowerCase();
+  // `tag` may be a single value or a comma-separated list; all must match.
+  const tagParam = clampStr(req.query.tag, 300).toLowerCase();
+  const wantTags = tagParam ? tagParam.split(',').map((t) => t.trim()).filter(Boolean) : [];
+  const sort = clampStr(req.query.sort, 20) || 'newest';
+  const hasIcon = req.query.hasIcon; // 'true' | 'false' | undefined
 
   let results = sites;
-  if (tag) {
-    results = results.filter((s) => (s.tags || []).includes(tag));
+  if (wantTags.length) {
+    results = results.filter((s) => {
+      const tags = s.tags || [];
+      return wantTags.every((t) => tags.includes(t));
+    });
   }
+  if (hasIcon === 'true') results = results.filter((s) => !!s.icon);
+  else if (hasIcon === 'false') results = results.filter((s) => !s.icon);
   if (q) {
     const terms = q.split(/\s+/).filter(Boolean);
     results = results.filter((s) => {
@@ -78,7 +87,18 @@ router.get('/', async (req, res) => {
       return terms.every((t) => hay.includes(t));
     });
   }
-  results = [...results].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+  // Sorting options.
+  const byCreated = (a, b) => (a.createdAt || '').localeCompare(b.createdAt || '');
+  const byName = (a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' });
+  results = [...results];
+  switch (sort) {
+    case 'oldest': results.sort(byCreated); break;
+    case 'name': results.sort(byName); break;
+    case 'name_desc': results.sort((a, b) => byName(b, a)); break;
+    case 'newest':
+    default: results.sort((a, b) => byCreated(b, a)); break;
+  }
 
   // Pagination: 10 per page. `page` is 1-indexed; clamp to valid range.
   // `all=true` bypasses paging (used by the admin Listings tab).
@@ -94,12 +114,28 @@ router.get('/', async (req, res) => {
 
   res.json({
     sites: pageItems,
-    matched,         // total matching the query/tag
-    total: sites.length, // total in the engine
+    matched,
+    total: sites.length,
     page: returnAll ? 1 : page,
     pageCount: returnAll ? 1 : pageCount,
     perPage: PER_PAGE,
   });
+});
+
+// Return all distinct tags with usage counts, most-used first. Public.
+// Powers the filter popup and the tag picker when adding listings.
+router.get('/tags', async (req, res) => {
+  const sites = await db.getSites();
+  const counts = new Map();
+  for (const s of sites) {
+    for (const t of s.tags || []) {
+      counts.set(t, (counts.get(t) || 0) + 1);
+    }
+  }
+  const tags = [...counts.entries()]
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag));
+  res.json({ tags });
 });
 
 // Add a new site. Any signed-in user.
