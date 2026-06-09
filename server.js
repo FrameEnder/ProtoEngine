@@ -192,6 +192,9 @@ const writeLimiter = rateLimit({
 // Apply CSRF to all mutating API routes.
 app.use('/api', (req, res, next) => {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
+  // API-key (bearer token) requests don't use cookies, so CSRF — which
+  // defends cookie-based auth — doesn't apply to them.
+  if (req.viaApiKey) return next();
   return doubleCsrfProtection(req, res, next);
 });
 
