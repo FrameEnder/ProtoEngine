@@ -52,6 +52,13 @@ export const db = {
     const lc = username.toLowerCase();
     return users.find((u) => u.username.toLowerCase() === lc) || null;
   },
+  // Find a user by the public id portion of their API key. The secret itself
+  // is verified separately (hash compare) by the caller.
+  async getUserByApiKeyId(keyId) {
+    if (!keyId) return null;
+    const users = await readJSON(USERS_FILE);
+    return users.find((u) => u.apiKeyId === keyId) || null;
+  },
   async addUser(user) {
     return withLock(USERS_FILE, async () => {
       const users = await readJSON(USERS_FILE);
