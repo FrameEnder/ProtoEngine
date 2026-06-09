@@ -701,6 +701,43 @@ function openAccountModal() {
     )
   );
 
+  // --- Background image section ---
+  const bgPreview = el('span', { class: 'accountbg__img' });
+  function paintBg() {
+    bgPreview.style.backgroundImage = state.user.background ? `url("${state.user.background}")` : '';
+    bgPreview.classList.toggle('accountbg__img--empty', !state.user.background);
+    bgPreview.textContent = state.user.background ? '' : 'none';
+  }
+  paintBg();
+  const bgFile = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp' });
+  bgFile.addEventListener('change', async () => {
+    const f = bgFile.files[0];
+    if (!f) return;
+    const fd = new FormData(); fd.set('background', f);
+    try {
+      const d = await api('/auth/background', { method: 'POST', form: fd });
+      state.user.background = d.background;
+      paintBg(); applyBackground(); toast('Background updated.');
+    } catch (e) { toast(e.message, true); }
+    bgFile.value = '';
+  });
+  const removeBgBtn = el('button', { type: 'button', class: 'minibtn' }, 'Remove');
+  removeBgBtn.addEventListener('click', async () => {
+    try {
+      await api('/auth/background', { method: 'DELETE' });
+      state.user.background = null;
+      paintBg(); applyBackground(); toast('Background removed.');
+    } catch (e) { toast(e.message, true); }
+  });
+  const bgSection = el('div', { class: 'accountbg' },
+    bgPreview,
+    el('div', {},
+      el('div', { class: 'field__hint', style: 'margin-bottom:8px' }, 'Shown behind the page, with results on a frosted-glass panel. PNG, JPG, GIF, or WEBP. Max 6 MB.'),
+      bgFile,
+      el('div', { style: 'margin-top:8px' }, removeBgBtn),
+    )
+  );
+
   // --- Username / password section ---
   const username = el('input', { type: 'text', value: state.user.username, autocomplete: 'username' });
   const current = el('input', { type: 'password', autocomplete: 'current-password', placeholder: 'required only to change password' });
@@ -789,6 +826,9 @@ function openAccountModal() {
   const wrap = el('div', {},
     el('div', { class: 'account__sectionlabel' }, 'Profile picture'),
     avatarSection,
+    el('hr', { class: 'account__rule' }),
+    el('div', { class: 'account__sectionlabel' }, 'Background image'),
+    bgSection,
     el('hr', { class: 'account__rule' }),
     form,
     el('hr', { class: 'account__rule' }),
@@ -1032,6 +1072,21 @@ function syncChrome() {
     }
     $('#menuName').textContent = state.user.username;
     $('#menuRole').textContent = state.user.role;
+  }
+  applyBackground();
+}
+
+// Apply the current user's background image (or clear it). Adds a body class
+// so the glass effect on results only kicks in when a background is present.
+function applyBackground() {
+  const layer = $('#bgLayer');
+  const bg = state.user && state.user.background;
+  if (bg) {
+    layer.style.backgroundImage = `url("${bg}")`;
+    document.body.classList.add('has-bg');
+  } else {
+    layer.style.backgroundImage = '';
+    document.body.classList.remove('has-bg');
   }
 }
 
