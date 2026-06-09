@@ -388,6 +388,8 @@ function openAuthModal(mode = 'login') {
       const d = await api(path, { method: 'POST', body: { username: username.value, password: password.value } });
       state.user = d.user;
       state.csrf = null; // session regenerated; refresh token
+      // Pull full profile (avatar, API-key status) which login doesn't return.
+      try { const me = await api('/auth/me'); if (me.user) state.user = me.user; } catch {}
       closeModal();
       syncChrome();
       toast(mode === 'login' ? 'Signed in.' : 'Account created. You are signed in.');
@@ -492,6 +494,45 @@ async function deleteSite(site) {
 // ---------- account settings ----------
 function openAccountModal() {
   const msg = el('div', { class: 'formmsg' });
+
+  // --- Profile picture section ---
+  const avatarPreview = el('span', { class: 'accountpfp__img' });
+  function paintAvatar() {
+    avatarPreview.innerHTML = '';
+    if (state.user.avatar) avatarPreview.append(el('img', { src: state.user.avatar, alt: '' }));
+    else avatarPreview.textContent = state.user.username.charAt(0).toUpperCase();
+  }
+  paintAvatar();
+  const avatarFile = el('input', { type: 'file', accept: 'image/png,image/jpeg,image/gif,image/webp' });
+  avatarFile.addEventListener('change', async () => {
+    const f = avatarFile.files[0];
+    if (!f) return;
+    const fd = new FormData(); fd.set('avatar', f);
+    try {
+      const d = await api('/auth/avatar', { method: 'POST', form: fd });
+      state.user.avatar = d.avatar;
+      paintAvatar(); syncChrome(); toast('Profile picture updated.');
+    } catch (e) { toast(e.message, true); }
+    avatarFile.value = '';
+  });
+  const removeAvatarBtn = el('button', { type: 'button', class: 'minibtn' }, 'Remove');
+  removeAvatarBtn.addEventListener('click', async () => {
+    try {
+      await api('/auth/avatar', { method: 'DELETE' });
+      state.user.avatar = null;
+      paintAvatar(); syncChrome(); toast('Profile picture removed.');
+    } catch (e) { toast(e.message, true); }
+  });
+  const avatarSection = el('div', { class: 'accountpfp' },
+    avatarPreview,
+    el('div', {},
+      el('div', { class: 'field__hint', style: 'margin-bottom:8px' }, 'PNG, JPG, GIF, or WEBP. Max 1 MB.'),
+      avatarFile,
+      el('div', { style: 'margin-top:8px' }, removeAvatarBtn),
+    )
+  );
+
+  // --- Username / password section ---
   const username = el('input', { type: 'text', value: state.user.username, autocomplete: 'username' });
   const current = el('input', { type: 'password', autocomplete: 'current-password', placeholder: 'required only to change password' });
   const next = el('input', { type: 'password', autocomplete: 'new-password', placeholder: 'leave blank to keep current' });
@@ -505,7 +546,6 @@ function openAccountModal() {
     msg,
     submit,
   );
-
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     msg.textContent = '';
@@ -514,7 +554,7 @@ function openAccountModal() {
     if (next.value) { body.currentPassword = current.value; body.newPassword = next.value; }
     try {
       const d = await api('/auth/account', { method: 'PATCH', body });
-      state.user = d.user;
+      state.user.username = d.user.username;
       closeModal();
       syncChrome();
       toast('Account updated.');
@@ -526,7 +566,67 @@ function openAccountModal() {
     }
   });
 
-  openModal(modalShell('Account settings', form));
+  // --- API key section ---
+  const apiSection = el('div', { class: 'apikey' });
+  function renderApiSection() {
+    apiSection.innerHTML = '';
+    apiSection.append(el('div', { class: 'apikey__title' }, 'API key'));
+    if (state.user.hasApiKey) {
+      apiSection.append(
+        el('p', { class: 'field__hint' }, 'An API key is active on this account. Generating a new one replaces it; revoking disables API access.'),
+        el('div', { style: 'display:flex;gap:8px;flex-wrap:wrap' },
+          el('button', { type: 'button', class: 'btn btn--ghost btn--small', onclick: genKey }, 'Regenerate'),
+          el('button', { type: 'button', class: 'btn btn--ghost btn--small', onclick: revokeKey }, 'Revoke key'),
+        )
+      );
+    } else {
+      apiSection.append(
+        el('p', { class: 'field__hint' }, 'Generate a key to access the API with this account\u2019s permissions. Send it as an Authorization: Bearer header.'),
+        el('button', { type: 'button', class: 'btn btn--ghost btn--small', onclick: genKey }, 'Generate API key'),
+      );
+    }
+  }
+  async function genKey() {
+    if (state.user.hasApiKey && !confirm('Replace the existing API key? The old key stops working immediately.')) return;
+    try {
+      const d = await api('/auth/apikey', { method: 'POST' });
+      state.user.hasApiKey = true;
+      showKeyOnce(d.apiKey);
+      renderApiSection();
+    } catch (e) { toast(e.message, true); }
+  }
+  async function revokeKey() {
+    if (!confirm('Revoke this API key? Any client using it will stop working.')) return;
+    try {
+      await api('/auth/apikey', { method: 'DELETE' });
+      state.user.hasApiKey = false;
+      renderApiSection();
+      toast('API key revoked.');
+    } catch (e) { toast(e.message, true); }
+  }
+  function showKeyOnce(key) {
+    // Shown once; not retrievable later.
+    const box = el('div', { class: 'apikey__reveal' },
+      el('div', { class: 'apikey__warn' }, 'Copy this key now — it will not be shown again.'),
+      el('code', { class: 'apikey__code' }, key),
+      el('button', { type: 'button', class: 'btn btn--ghost btn--small', onclick: () => {
+        navigator.clipboard?.writeText(key).then(() => toast('Copied to clipboard.'), () => {});
+      } }, 'Copy'),
+    );
+    apiSection.append(box);
+  }
+  renderApiSection();
+
+  const wrap = el('div', {},
+    el('div', { class: 'account__sectionlabel' }, 'Profile picture'),
+    avatarSection,
+    el('hr', { class: 'account__rule' }),
+    form,
+    el('hr', { class: 'account__rule' }),
+    apiSection,
+  );
+
+  openModal(modalShell('Account settings', wrap));
 }
 
 // ---------- admin panel ----------
@@ -576,10 +676,14 @@ async function renderUsersTab(content) {
       const row = el('div', { class: 'adminrow' },
         el('div', { class: 'adminrow__main' },
           el('div', { class: 'adminrow__title' }, u.username,
-            u.id === state.user.id ? el('span', { class: 'badge', style: 'margin-left:8px' }, 'you') : null),
+            u.id === state.user.id ? el('span', { class: 'badge', style: 'margin-left:8px' }, 'you') : null,
+            u.hasApiKey ? el('span', { class: 'badge', style: 'margin-left:8px' }, 'API key') : null),
           el('div', { class: 'adminrow__sub' }, 'joined ' + new Date(u.createdAt).toLocaleDateString())),
         roleSel,
         el('button', { class: 'minibtn', onclick: () => adminEditUser(u, content) }, 'Edit'),
+        u.hasApiKey
+          ? el('button', { class: 'minibtn', onclick: () => adminRevokeKey(u, content) }, 'Revoke key')
+          : null,
         u.id === state.user.id ? null :
           el('button', { class: 'minibtn minibtn--danger', onclick: () => adminDeleteUser(u, content) }, 'Delete'),
       );
@@ -614,6 +718,15 @@ function adminEditUser(u, content) {
     } catch (err) { msg.className = 'formmsg formmsg--error'; msg.textContent = err.message; submit.disabled = false; }
   });
   openModal(modalShell('Edit user', form));
+}
+
+async function adminRevokeKey(u, content) {
+  if (!confirm(`Revoke ${u.username}'s API key? Any client using it stops working.`)) return;
+  try {
+    await api('/admin/users/' + u.id + '/apikey', { method: 'DELETE' });
+    toast('API key revoked.');
+    renderUsersTab(content);
+  } catch (e) { toast(e.message, true); }
 }
 
 async function adminDeleteUser(u, content) {
@@ -741,7 +854,13 @@ function syncChrome() {
   $('#signinBtn').hidden = signedIn;
   $('#adminBtn').hidden = !(signedIn && state.user.role === 'admin');
   if (signedIn) {
-    $('#avatar').textContent = state.user.username.charAt(0);
+    const av = $('#avatar');
+    av.innerHTML = '';
+    if (state.user.avatar) {
+      av.append(el('img', { src: state.user.avatar, alt: '' }));
+    } else {
+      av.textContent = state.user.username.charAt(0);
+    }
     $('#menuName').textContent = state.user.username;
     $('#menuRole').textContent = state.user.role;
   }
