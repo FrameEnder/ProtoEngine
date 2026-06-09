@@ -32,3 +32,4 @@ services:
       - ./data:/app/data
       - ./public/icons:/app/public/icons
       - ./public/avatars:/app/public/avatars
+      - ./public/backgrounds:/app/public/backgrounds
