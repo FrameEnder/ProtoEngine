@@ -1,0 +1,33 @@
+# Docker Compose file for Docker hosts (e.g. UGREEN NAS / UGOS Pro).
+# Use this instead of compose.yaml when deploying with `docker compose`.
+#
+#   docker compose -f compose.docker.yaml up -d --build
+#
+# Differences from the Podman compose.yaml:
+#   - No `userns_mode` (that is Podman-specific and Docker rejects it).
+#   - No `:Z` SELinux volume labels (not needed on UGOS).
+#   - A `user:` directive so the container writes files as a host user that
+#     owns the mounted folders. Set PUID/PGID in .env to match your NAS user
+#     (run `id` over SSH to find them; the first UGOS admin is usually 1000).
+services:
+  lumen:
+    build: .
+    container_name: lumen-search
+    restart: unless-stopped
+    # Run the app as your NAS user so the bind-mounted data folders are
+    # writable. Defaults to 1000:1000 if PUID/PGID aren't set.
+    user: "${PUID:-1000}:${PGID:-1000}"
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      APP_NAME: "${APP_NAME:-Lumen}"
+      # Keep false unless you front this with HTTPS (reverse proxy).
+      SECURE_COOKIES: "${SECURE_COOKIES:-false}"
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      CSRF_SECRET: ${CSRF_SECRET:?set CSRF_SECRET in .env}
+    volumes:
+      # Persist the JSON datastore, sessions, and uploaded favicons.
+      - ./data:/app/data
+      - ./public/icons:/app/public/icons

@@ -1,0 +1,30 @@
+# Works with `podman-compose up -d` or `docker compose up -d`.
+services:
+  lumen:
+    build: .
+    container_name: lumen-search
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      # Brand name shown across the UI. Defaults to "Lumen" if unset.
+      APP_NAME: "${APP_NAME:-Lumen}"
+      # Set to "true" ONLY when serving over HTTPS (e.g. behind a reverse
+      # proxy). Over plain http:// it must stay false or logins won't persist.
+      SECURE_COOKIES: "${SECURE_COOKIES:-false}"
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      CSRF_SECRET: ${CSRF_SECRET:?set CSRF_SECRET in .env}
+    # Map the host user into the container so files in the mounted volumes
+    # are owned by YOU on the host and by the app inside the container — no
+    # more "unwritable from the host" problem that the :U chown flag caused.
+    # We pin to 1000:1000 (the image's `node` user) so it lines up with the
+    # app's files regardless of your actual host UID.
+    userns_mode: "keep-id:uid=1000,gid=1000"
+    volumes:
+      # Persist the JSON datastore, sessions, and uploaded favicons.
+      # :Z relabels for SELinux (needed on Bazzite/Fedora-based systems).
+      # No :U here — keep-id handles ownership so both sides can write.
+      - ./data:/app/data:Z
+      - ./public/icons:/app/public/icons:Z
