@@ -29,3 +29,4 @@ services:
       - ./data:/app/data:Z
       - ./public/icons:/app/public/icons:Z
       - ./public/avatars:/app/public/avatars:Z
+      - ./public/backgrounds:/app/public/backgrounds:Z
