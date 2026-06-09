@@ -30,13 +30,33 @@ function handleZipUpload(req, res, next) {
 const ICON_EXT = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico']);
 
 function publicUser(u) {
-  return { id: u.id, username: u.username, role: u.role, createdAt: u.createdAt };
+  return {
+    id: u.id,
+    username: u.username,
+    role: u.role,
+    createdAt: u.createdAt,
+    avatar: u.avatar || null,
+    hasApiKey: !!u.apiKeyHash,
+  };
+}
+
+// Revoke a specific user's API key (admin override).
+async function revokeUserKey(id) {
+  return db.updateUser(id, { apiKeyId: null, apiKeyHash: null, apiKeyCreatedAt: null });
 }
 
 // List all users.
 router.get('/users', async (req, res) => {
   const users = await db.getUsers();
   res.json({ users: users.map(publicUser) });
+});
+
+// Revoke a given user's API key (admin only).
+router.delete('/users/:id/apikey', async (req, res) => {
+  const target = await db.getUserById(req.params.id);
+  if (!target) return res.status(404).json({ error: 'User not found.' });
+  await revokeUserKey(target.id);
+  res.json({ ok: true });
 });
 
 // Modify a user: username, role, and/or password reset.
