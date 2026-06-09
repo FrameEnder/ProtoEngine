@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <title>{{APP_NAME}} — find your group's corner of the web</title>
+  <!-- Critical inline style: applied during initial HTML parse, before
+       styles.css loads, so the page never flashes white on reload. -->
+  <style>
+    html { background: #0e0f13; }
+    body { background: #0e0f13; color: #e3e5e8; margin: 0; }
+  </style>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+  <!-- Top bar -->
+  <header class="topbar" id="topbar">
+    <a class="topbar__brand" href="/" aria-label="{{APP_NAME}} home">{{APP_NAME}}</a>
+    <div class="topbar__spacer" id="topbarSpacer"></div>
+    <button class="iconbtn" id="addBtn" title="Add a website" aria-label="Add a website" hidden>
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+    <button class="textbtn" id="adminBtn" hidden>Admin panel</button>
+    <div class="usermenu" id="userMenu" hidden>
+      <button class="usermenu__trigger" id="userMenuTrigger" aria-haspopup="true" aria-expanded="false">
+        <span class="avatar" id="avatar">?</span>
+      </button>
+      <div class="usermenu__dropdown" id="userMenuDropdown" role="menu" hidden>
+        <div class="usermenu__head">
+          <div class="usermenu__name" id="menuName"></div>
+          <div class="usermenu__role" id="menuRole"></div>
+        </div>
+        <button class="usermenu__item" id="accountBtn" role="menuitem">Account settings</button>
+        <button class="usermenu__item" id="logoutBtn" role="menuitem">Sign out</button>
+      </div>
+    </div>
+    <button class="textbtn textbtn--accent" id="signinBtn">Sign in</button>
+  </header>
+
+  <!-- Home / search landing -->
+  <main class="stage" id="stage">
+    <div class="searchrow" id="searchRow">
+      <section class="hero" id="hero">
+        <h1 class="hero__word" id="heroWord" aria-label="{{APP_NAME}}"></h1>
+        <p class="hero__tag" id="heroTag">Search the sites your people actually use.</p>
+      </section>
+
+      <form class="searchbar" id="searchForm" role="search" autocomplete="off">
+        <svg class="searchbar__icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input class="searchbar__input" id="searchInput" type="text" placeholder="Search names, URLs, descriptions, or tags" aria-label="Search" />
+        <button class="searchbar__clear" id="clearBtn" type="button" aria-label="Clear search" hidden>&times;</button>
+      </form>
+    </div>
+
+    <div class="activefilter" id="activeFilter" hidden>
+      Filtering by tag
+      <button class="chip chip--active" id="activeFilterChip"></button>
+    </div>
+
+    <section class="results" id="results" aria-live="polite"></section>
+  </main>
+
+  <!-- Toast -->
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <!-- Modal root -->
+  <div class="modal-root" id="modalRoot" hidden></div>
+
+  <script src="/app.js" defer></script>
+</body>
+</html>
