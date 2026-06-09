@@ -315,6 +315,7 @@ async function loadSites() {
     applyStateToUrl(false);
     renderResults();
     updateFilterButton();
+    loadRssPanel();
     window.scrollTo({ top: 0, behavior: 'auto' });
   } catch (e) {
     toast(e.message, true);
@@ -823,19 +824,149 @@ function openAccountModal() {
   }
   renderApiSection();
 
-  const wrap = el('div', {},
-    el('div', { class: 'account__sectionlabel' }, 'Profile picture'),
-    avatarSection,
-    el('hr', { class: 'account__rule' }),
-    el('div', { class: 'account__sectionlabel' }, 'Background image'),
-    bgSection,
-    el('hr', { class: 'account__rule' }),
-    form,
-    el('hr', { class: 'account__rule' }),
-    apiSection,
-  );
+  // --- Tabbed layout ---
+  const panels = {
+    security: el('div', {},
+      el('div', { class: 'account__sectionlabel' }, 'Username & password'),
+      form,
+      el('hr', { class: 'account__rule' }),
+      apiSection,
+    ),
+    customization: el('div', {},
+      el('div', { class: 'account__sectionlabel' }, 'Profile picture'),
+      avatarSection,
+      el('hr', { class: 'account__rule' }),
+      el('div', { class: 'account__sectionlabel' }, 'Background image'),
+      bgSection,
+    ),
+    rss: el('div', {}), // populated lazily by renderRssTab
+  };
 
-  openModal(modalShell('Account settings', wrap));
+  const tabsBar = el('div', { class: 'tabs' });
+  const content = el('div', { class: 'account__content' });
+  const tabDefs = [
+    ['security', 'Login & security'],
+    ['customization', 'Customization'],
+    ['rss', 'RSS feeds'],
+  ];
+  const tabButtons = {};
+  let rssLoaded = false;
+  function showTab(key) {
+    Object.values(tabButtons).forEach((b) => b.classList.remove('tab--active'));
+    tabButtons[key].classList.add('tab--active');
+    content.innerHTML = '';
+    content.append(panels[key]);
+    if (key === 'rss' && !rssLoaded) { rssLoaded = true; renderRssTab(panels.rss); }
+  }
+  for (const [key, label] of tabDefs) {
+    const b = el('button', { class: 'tab', onclick: () => showTab(key) }, label);
+    tabButtons[key] = b;
+    tabsBar.append(b);
+  }
+
+  const wrap = el('div', {}, tabsBar, content);
+  showTab('security');
+
+  openModal(modalShell('Account settings', wrap, true));
+}
+
+// Render the RSS feeds management tab.
+async function renderRssTab(panel) {
+  panel.innerHTML = '';
+  panel.append(el('div', { class: 'placeholder', style: 'padding:24px' }, 'Loading feeds…'));
+
+  let feeds = [];
+  try {
+    const d = await api('/rss/feeds');
+    feeds = d.feeds || [];
+  } catch (e) {
+    panel.innerHTML = '';
+    panel.append(el('div', { class: 'placeholder' }, e.message));
+    return;
+  }
+
+  panel.innerHTML = '';
+
+  // Add-feed row.
+  const urlInput = el('input', { type: 'text', placeholder: 'https://example.com/feed.xml' });
+  const addBtn = el('button', { class: 'btn btn--primary btn--small', type: 'button' }, 'Add');
+  const addMsg = el('div', { class: 'formmsg' });
+  async function addFeed() {
+    const url = urlInput.value.trim();
+    if (!url) return;
+    addBtn.disabled = true; addBtn.textContent = 'Checking…';
+    addMsg.textContent = '';
+    try {
+      const d = await api('/rss/feeds', { method: 'POST', body: { url } });
+      feeds.push(d.feed);
+      urlInput.value = '';
+      renderList();
+      toast('Feed added.');
+    } catch (e) {
+      addMsg.className = 'formmsg formmsg--error';
+      addMsg.textContent = e.message;
+    } finally {
+      addBtn.disabled = false; addBtn.textContent = 'Add';
+    }
+  }
+  addBtn.addEventListener('click', addFeed);
+  urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addFeed(); });
+
+  const list = el('div', { class: 'rsslist' });
+
+  function toggleRow(feed, key, labelText) {
+    const input = el('input', { type: 'checkbox', ...(feed[key] ? { checked: 'checked' } : {}) });
+    input.addEventListener('change', async () => {
+      try {
+        await api('/rss/feeds/' + feed.id, { method: 'PATCH', body: { [key]: input.checked } });
+        feed[key] = input.checked;
+      } catch (e) { toast(e.message, true); input.checked = feed[key]; }
+    });
+    return el('label', { class: 'rsstoggle' }, input, el('span', {}, labelText));
+  }
+
+  function renderList() {
+    list.innerHTML = '';
+    if (!feeds.length) {
+      list.append(el('div', { class: 'field__hint', style: 'padding:8px 0' }, 'No feeds yet. Add a feed URL above.'));
+      return;
+    }
+    for (const feed of feeds) {
+      const del = el('button', { class: 'minibtn minibtn--danger', type: 'button' }, 'Remove');
+      del.addEventListener('click', async () => {
+        if (!confirm('Remove this feed?')) return;
+        try {
+          await api('/rss/feeds/' + feed.id, { method: 'DELETE' });
+          feeds = feeds.filter((f) => f.id !== feed.id);
+          renderList();
+        } catch (e) { toast(e.message, true); }
+      });
+      list.append(
+        el('div', { class: 'rssitem' },
+          el('div', { class: 'rssitem__head' },
+            el('div', { class: 'rssitem__title' }, feed.title || feed.url),
+            del,
+          ),
+          el('div', { class: 'rssitem__url' }, feed.url),
+          el('div', { class: 'rssitem__toggles' },
+            toggleRow(feed, 'enabled', 'Enabled'),
+            toggleRow(feed, 'onMain', 'Main page'),
+            toggleRow(feed, 'onSearch', 'Search page'),
+          ),
+        )
+      );
+    }
+  }
+  renderList();
+
+  panel.append(
+    el('div', { class: 'account__sectionlabel' }, 'RSS feeds'),
+    el('div', { class: 'field__hint', style: 'margin-bottom:10px' },
+      'Add feed URLs, then choose where each appears. Feeds show in a panel on the right side of the page.'),
+    el('div', { class: 'rssadd' }, urlInput, addBtn),
+    addMsg,
+    list,
+  );
 }
 
 // ---------- admin panel ----------
@@ -1090,6 +1221,58 @@ function applyBackground() {
   }
 }
 
+// Load and render the RSS side panel for the current view (main vs search).
+// Only shown when signed in and the user has feeds flagged for this context.
+async function loadRssPanel() {
+  const panel = $('#rssPanel');
+  if (!panel) return;
+  if (!state.user) { panel.hidden = true; panel.innerHTML = ''; document.body.classList.remove('has-rss'); return; }
+
+  const context = isSearching() ? 'search' : 'main';
+  try {
+    const d = await api('/rss/entries?context=' + context);
+    const entries = d.entries || [];
+    if (!entries.length) {
+      panel.hidden = true; panel.innerHTML = '';
+      document.body.classList.remove('has-rss');
+      return;
+    }
+    panel.innerHTML = '';
+    const head = el('div', { class: 'rsspanel__head' }, el('span', {}, 'Feeds'));
+    const closeBtn = el('button', { class: 'rsspanel__close', 'aria-label': 'Close feeds' }, '×');
+    closeBtn.addEventListener('click', () => panel.classList.remove('rsspanel--open'));
+    head.append(closeBtn);
+    panel.append(head);
+    for (const e of entries) {
+      const card = el('a', {
+        class: 'rsscard',
+        href: e.link || '#',
+        target: '_blank',
+        rel: 'noopener noreferrer',
+      },
+        el('div', { class: 'rsscard__feed' }, e.feedTitle || ''),
+        el('div', { class: 'rsscard__title' }, e.title || '(no title)'),
+        e.summary ? el('div', { class: 'rsscard__summary' }, e.summary) : null,
+        e.date ? el('div', { class: 'rsscard__date' }, formatRssDate(e.date)) : null,
+      );
+      panel.append(card);
+    }
+    panel.hidden = false;
+    document.body.classList.add('has-rss');
+  } catch {
+    panel.hidden = true; panel.innerHTML = '';
+    document.body.classList.remove('has-rss');
+  }
+}
+
+function formatRssDate(d) {
+  const t = Date.parse(d);
+  if (!t) return '';
+  try {
+    return new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  } catch { return ''; }
+}
+
 // ---------- wire up ----------
 function init() {
   const input = $('#searchInput');
@@ -1120,7 +1303,14 @@ function init() {
   $('#addBtn').addEventListener('click', () => openSiteModal());
   $('#filterBtn').addEventListener('click', openFilterModal);
   $('#signinBtn').addEventListener('click', () => openAuthModal('login'));
-  $('#adminBtn').addEventListener('click', openAdminPanel);
+  // RSS drawer toggle (small screens).
+  $('#rssToggleBtn').addEventListener('click', () => {
+    $('#rssPanel').classList.toggle('rsspanel--open');
+  });
+  $('#adminBtn').addEventListener('click', () => {
+    $('#userMenuDropdown').hidden = true;
+    openAdminPanel();
+  });
 
   // Brand/logo returns to the home view without a full page reload. Both the
   // top-bar brand and the colorful hero logo trigger it (the hero is the only
