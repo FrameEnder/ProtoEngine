@@ -12,6 +12,8 @@ import { uid, validUsername, validPassword } from '../util.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AVATAR_DIR = path.join(__dirname, '..', 'public', 'avatars');
 if (!fs.existsSync(AVATAR_DIR)) fs.mkdirSync(AVATAR_DIR, { recursive: true });
+const BG_DIR = path.join(__dirname, '..', 'public', 'backgrounds');
+if (!fs.existsSync(BG_DIR)) fs.mkdirSync(BG_DIR, { recursive: true });
 
 const AVATAR_TYPES = {
   'image/png': '.png',
@@ -34,6 +36,22 @@ function handleAvatar(req, res, next) {
   });
 }
 
+// Background images can be larger than avatars (full-page art).
+const uploadBg = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 6 * 1024 * 1024 }, // 6 MB
+  fileFilter: (req, file, cb) => {
+    if (AVATAR_TYPES[file.mimetype]) cb(null, true);
+    else cb(new Error('Background must be PNG, JPG, GIF, or WEBP.'));
+  },
+}).single('background');
+function handleBg(req, res, next) {
+  uploadBg(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  });
+}
+
 const router = express.Router();
 
 // Return the signed-in user (or null), including profile fields.
@@ -47,6 +65,7 @@ router.get('/me', async (req, res) => {
       username: u.username,
       role: u.role,
       avatar: u.avatar || null,
+      background: u.background || null,
       hasApiKey: !!u.apiKeyHash,
     },
   });
@@ -170,6 +189,33 @@ router.delete('/avatar', requireAuth, async (req, res) => {
     fs.promises.unlink(path.join(AVATAR_DIR, path.basename(me.avatar))).catch(() => {});
   }
   await db.updateUser(me.id, { avatar: null });
+  res.json({ ok: true });
+});
+
+// Upload or replace the current user's background image.
+router.post('/background', requireAuth, handleBg, async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Choose an image to upload.' });
+  const me = await db.getUserById(req.user.id);
+  if (!me) return res.status(404).json({ error: 'Account not found.' });
+  if (me.background && me.background.startsWith('/backgrounds/')) {
+    fs.promises.unlink(path.join(BG_DIR, path.basename(me.background))).catch(() => {});
+  }
+  const ext = AVATAR_TYPES[req.file.mimetype];
+  const name = uid() + ext;
+  fs.writeFileSync(path.join(BG_DIR, name), req.file.buffer);
+  const background = '/backgrounds/' + name;
+  await db.updateUser(me.id, { background });
+  res.json({ background });
+});
+
+// Remove the current user's background image.
+router.delete('/background', requireAuth, async (req, res) => {
+  const me = await db.getUserById(req.user.id);
+  if (!me) return res.status(404).json({ error: 'Account not found.' });
+  if (me.background && me.background.startsWith('/backgrounds/')) {
+    fs.promises.unlink(path.join(BG_DIR, path.basename(me.background))).catch(() => {});
+  }
+  await db.updateUser(me.id, { background: null });
   res.json({ ok: true });
 });
 
