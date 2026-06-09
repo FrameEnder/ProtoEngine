@@ -24,7 +24,6 @@
     <button class="iconbtn" id="addBtn" title="Add a website" aria-label="Add a website" hidden>
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
-    <button class="textbtn" id="adminBtn" hidden>Admin panel</button>
     <div class="usermenu" id="userMenu" hidden>
       <button class="usermenu__trigger" id="userMenuTrigger" aria-haspopup="true" aria-expanded="false">
         <span class="avatar" id="avatar">?</span>
@@ -35,6 +34,7 @@
           <div class="usermenu__role" id="menuRole"></div>
         </div>
         <button class="usermenu__item" id="accountBtn" role="menuitem">Account settings</button>
+        <button class="usermenu__item" id="adminBtn" role="menuitem" hidden>Admin panel</button>
         <button class="usermenu__item" id="logoutBtn" role="menuitem">Sign out</button>
       </div>
     </div>
@@ -63,6 +63,12 @@
 
     <section class="results" id="results" aria-live="polite"></section>
   </main>
+
+  <!-- RSS feed side panel (populated when the user has feeds for this view) -->
+  <aside class="rsspanel" id="rssPanel" hidden aria-label="RSS feeds"></aside>
+  <button class="rsstoggle-btn" id="rssToggleBtn" type="button" title="Show feeds" aria-label="Show RSS feeds">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 11a9 9 0 0 1 9 9M5 5a15 15 0 0 1 15 15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="6" cy="19" r="1.6" fill="currentColor"/></svg>
+  </button>
 
   <!-- Toast -->
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
