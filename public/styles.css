@@ -290,11 +290,13 @@ body.searching .activefilter { max-width: 650px; margin-left: 0; margin-top: 4px
 .activefilter {
   display: flex;
   align-items: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
   margin-top: 18px;
   color: var(--text-dim);
   font-size: 13px;
 }
+.activefilter__label { color: var(--text-faint); }
 
 /* ---------- Results ---------- */
 .results { margin-top: 26px; display: flex; flex-direction: column; gap: 30px; }
@@ -530,6 +532,23 @@ body.searching .activefilter { max-width: 650px; margin-left: 0; margin-top: 4px
 }
 .badge--admin { background: rgba(242,139,130,0.15); color: var(--red); }
 .badge--moderator { background: rgba(253,214,99,0.15); color: var(--amber); }
+
+/* ---------- Search bar filter button ---------- */
+.searchbar__filter {
+  width: 32px; height: 32px; flex: none; margin-left: 2px;
+  border: 1px solid transparent; background: transparent; color: var(--text-dim);
+}
+.searchbar__filter:hover { background: var(--surface-hover); color: var(--text); border-color: var(--border); }
+.iconbtn--active { color: var(--blue) !important; border-color: var(--blue) !important; }
+
+/* ---------- Tag pickers (filter popup + add/edit suggestions) ---------- */
+.tagpick {
+  display: flex; flex-wrap: wrap; gap: 7px;
+  max-height: 168px; overflow-y: auto;
+  padding: 4px 2px;
+}
+.tagpick--suggest { margin-top: 10px; max-height: 110px; }
+.chip--mini { font-size: 11px; padding: 3px 9px; }
 
 /* ---------- Avatar images ---------- */
 .avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
