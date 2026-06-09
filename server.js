@@ -15,6 +15,7 @@ import { loadUser } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
 import siteRoutes from './routes/sites.js';
 import adminRoutes from './routes/admin.js';
+import rssRoutes from './routes/rss.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -223,6 +224,7 @@ app.use('/api/auth/register', authLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/sites', writeLimiter, siteRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/rss', rssRoutes);
 
 // Serve index.html with the brand name injected, so the title and header
 // are correct on first paint (no flash of the default name). Other static
