@@ -28,6 +28,7 @@ services:
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
       CSRF_SECRET: ${CSRF_SECRET:?set CSRF_SECRET in .env}
     volumes:
-      # Persist the JSON datastore, sessions, and uploaded favicons.
+      # Persist the JSON datastore, sessions, uploaded favicons, and avatars.
       - ./data:/app/data
       - ./public/icons:/app/public/icons
+      - ./public/avatars:/app/public/avatars
