@@ -90,6 +90,19 @@ NAS user once: `sudo chown -R $(id -u):$(id -g) ./data ./public/icons`.
 To expose it outside your LAN, use UGOS's reverse proxy (or your own) to put
 HTTPS in front, then set `SECURE_COOKIES=true` in `.env` and restart.
 
+## Account settings
+
+Account settings is organized into tabs:
+
+- **Login & security** — change username/password, generate or revoke your API key.
+- **Customization** — profile picture and per-user background image.
+- **RSS feeds** — add feed URLs and toggle, per feed, whether it's enabled and
+  whether it appears on the main page and/or the search page. Enabled feeds
+  render in a panel on the right side of the screen (on wide viewports), with
+  entries merged and sorted newest-first. Feeds are fetched and parsed
+  server-side (RSS 2.0 and Atom), cached briefly, with a guard against
+  pointing feeds at internal/loopback hosts.
+
 ## API access
 
 Each account can generate a personal API key from Account settings. The key
