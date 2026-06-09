@@ -23,8 +23,9 @@ services:
     # app's files regardless of your actual host UID.
     userns_mode: "keep-id:uid=1000,gid=1000"
     volumes:
-      # Persist the JSON datastore, sessions, and uploaded favicons.
+      # Persist the JSON datastore, sessions, uploaded favicons, and avatars.
       # :Z relabels for SELinux (needed on Bazzite/Fedora-based systems).
       # No :U here — keep-id handles ownership so both sides can write.
       - ./data:/app/data:Z
       - ./public/icons:/app/public/icons:Z
+      - ./public/avatars:/app/public/avatars:Z
