@@ -1,4 +1,4 @@
-# Lumen
+# ProtoEngine
 
 A self-hostable search engine for the websites your group, team, or homelab actually uses. It looks and behaves like dark-mode Google: a centered search, clean result listings with a favicon, the site name, a green-ish URL crumb, a description, and clickable tags at the bottom of each listing. Tags filter the results when tapped.
 
