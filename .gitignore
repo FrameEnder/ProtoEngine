@@ -5,5 +5,7 @@ data/sites.json
 data/sessions/
 public/icons/*
 !public/icons/.gitkeep
+public/avatars/*
+!public/avatars/.gitkeep
 *.log
 .DS_Store
