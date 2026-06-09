@@ -1,14 +1,55 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import multer from 'multer';
 import { db } from '../data-store.js';
 import { requireAuth } from '../middleware/auth.js';
 import { uid, validUsername, validPassword } from '../util.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const AVATAR_DIR = path.join(__dirname, '..', 'public', 'avatars');
+if (!fs.existsSync(AVATAR_DIR)) fs.mkdirSync(AVATAR_DIR, { recursive: true });
+
+const AVATAR_TYPES = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+};
+const uploadAvatar = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 1024 * 1024 }, // 1 MB
+  fileFilter: (req, file, cb) => {
+    if (AVATAR_TYPES[file.mimetype]) cb(null, true);
+    else cb(new Error('Profile picture must be PNG, JPG, GIF, or WEBP.'));
+  },
+}).single('avatar');
+function handleAvatar(req, res, next) {
+  uploadAvatar(req, res, (err) => {
+    if (err) return res.status(400).json({ error: err.message });
+    next();
+  });
+}
+
 const router = express.Router();
 
-// Return the signed-in user (or null).
-router.get('/me', (req, res) => {
-  res.json({ user: req.user || null });
+// Return the signed-in user (or null), including profile fields.
+router.get('/me', async (req, res) => {
+  if (!req.user) return res.json({ user: null });
+  const u = await db.getUserById(req.user.id);
+  if (!u) return res.json({ user: null });
+  res.json({
+    user: {
+      id: u.id,
+      username: u.username,
+      role: u.role,
+      avatar: u.avatar || null,
+      hasApiKey: !!u.apiKeyHash,
+    },
+  });
 });
 
 // Register a new account. The very first account created becomes admin.
@@ -101,6 +142,63 @@ router.patch('/account', requireAuth, async (req, res) => {
   }
   const updated = await db.updateUser(me.id, patch);
   res.json({ user: { id: updated.id, username: updated.username, role: updated.role } });
+});
+
+// Upload or replace the current user's profile picture.
+router.post('/avatar', requireAuth, handleAvatar, async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Choose an image to upload.' });
+  const me = await db.getUserById(req.user.id);
+  if (!me) return res.status(404).json({ error: 'Account not found.' });
+
+  // Remove any previous avatar file.
+  if (me.avatar && me.avatar.startsWith('/avatars/')) {
+    fs.promises.unlink(path.join(AVATAR_DIR, path.basename(me.avatar))).catch(() => {});
+  }
+  const ext = AVATAR_TYPES[req.file.mimetype];
+  const name = uid() + ext;
+  fs.writeFileSync(path.join(AVATAR_DIR, name), req.file.buffer);
+  const avatar = '/avatars/' + name;
+  await db.updateUser(me.id, { avatar });
+  res.json({ avatar });
+});
+
+// Remove the current user's profile picture.
+router.delete('/avatar', requireAuth, async (req, res) => {
+  const me = await db.getUserById(req.user.id);
+  if (!me) return res.status(404).json({ error: 'Account not found.' });
+  if (me.avatar && me.avatar.startsWith('/avatars/')) {
+    fs.promises.unlink(path.join(AVATAR_DIR, path.basename(me.avatar))).catch(() => {});
+  }
+  await db.updateUser(me.id, { avatar: null });
+  res.json({ ok: true });
+});
+
+// Generate (or regenerate) an API key for the current user. The full key is
+// returned ONCE here and never stored in plaintext — only a hash is kept.
+router.post('/apikey', requireAuth, async (req, res) => {
+  const me = await db.getUserById(req.user.id);
+  if (!me) return res.status(404).json({ error: 'Account not found.' });
+
+  const keyId = crypto.randomBytes(6).toString('hex');   // public lookup handle
+  const secret = crypto.randomBytes(24).toString('hex');  // the secret part
+  const fullKey = `lmn_${keyId}_${secret}`;
+  const apiKeyHash = await bcrypt.hash(secret, 12);
+
+  await db.updateUser(me.id, {
+    apiKeyId: keyId,
+    apiKeyHash,
+    apiKeyCreatedAt: new Date().toISOString(),
+  });
+  // Returned once; the client must copy it now.
+  res.json({ apiKey: fullKey, createdAt: new Date().toISOString() });
+});
+
+// Revoke the current user's own API key.
+router.delete('/apikey', requireAuth, async (req, res) => {
+  const me = await db.getUserById(req.user.id);
+  if (!me) return res.status(404).json({ error: 'Account not found.' });
+  await db.updateUser(me.id, { apiKeyId: null, apiKeyHash: null, apiKeyCreatedAt: null });
+  res.json({ ok: true });
 });
 
 export default router;
