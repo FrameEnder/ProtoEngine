@@ -591,8 +591,8 @@ function openAccountModal() {
     try {
       const d = await api('/auth/apikey', { method: 'POST' });
       state.user.hasApiKey = true;
-      showKeyOnce(d.apiKey);
-      renderApiSection();
+      renderApiSection();      // rebuild the section first (clears the box)...
+      showKeyOnce(d.apiKey);   // ...then append the one-time key reveal
     } catch (e) { toast(e.message, true); }
   }
   async function revokeKey() {
