@@ -90,6 +90,27 @@ NAS user once: `sudo chown -R $(id -u):$(id -g) ./data ./public/icons`.
 To expose it outside your LAN, use UGOS's reverse proxy (or your own) to put
 HTTPS in front, then set `SECURE_COOKIES=true` in `.env` and restart.
 
+## API access
+
+Each account can generate a personal API key from Account settings. The key
+is shown once — copy it then. Send it as a Bearer token:
+
+```bash
+curl -H "Authorization: Bearer lmn_xxxx_yyyy" \
+  https://your-host/api/sites?q=docs
+```
+
+API requests authenticate as that account and carry its permissions: a user
+key can manage that user's own listings; a moderator key can edit any listing;
+an admin key can use the admin endpoints. Token requests skip CSRF (that
+protects cookie sessions, not tokens). Revoke a key any time from Account
+settings; admins can revoke any user's key from the admin panel's Users tab.
+Keys are stored hashed, never in plaintext.
+
+Useful endpoints: `GET /api/sites` (search/list, public), `POST /api/sites`
+(add), `PATCH/DELETE /api/sites/:id` (manage), `GET /api/config`. Writes via
+multipart form or JSON, same fields as the web UI.
+
 ## Project layout
 
 ```
