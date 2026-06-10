@@ -21,6 +21,20 @@
 
 * { box-sizing: border-box; }
 
+/* Minimal scrollbars: no track background, just a slim rounded thumb. */
+* {
+  scrollbar-width: thin;                       /* Firefox */
+  scrollbar-color: var(--border) transparent;  /* Firefox: thumb / track */
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+::-webkit-scrollbar-corner { background: transparent; }
+
 /* The HTML `hidden` attribute is overridden by any explicit `display` value,
    so enforce it globally. !important keeps it winning over component rules
    like `.modal-root { display: grid }`. */
@@ -61,6 +75,7 @@ button { font-family: inherit; cursor: pointer; }
   letter-spacing: -0.02em;
   color: var(--text);
   text-decoration: none;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
 }
 .topbar__brand::first-letter { color: var(--blue); }
 /* While searching, the colorful hero logo beside the search bar serves as
@@ -175,6 +190,7 @@ body.searching .topbar__brand { display: none; }
   letter-spacing: -0.04em;
   margin: 0;
   line-height: 1;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.45);
 }
 .hero__word span {
   display: inline-block;
@@ -195,6 +211,7 @@ body.searching .topbar__brand { display: none; }
   color: var(--text-dim);
   font-size: 16px;
   margin: 18px 0 0;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
 }
 
 /* ---------- Post-search layout (Google results view) ----------
@@ -645,28 +662,38 @@ body.has-bg .activefilter {
 /* ---------- RSS side panel ---------- */
 .rsspanel {
   position: fixed;
-  top: 70px;
+  top: 84px;                 /* clear of the top banner */
   right: 16px;
   width: 300px;
-  max-height: calc(100vh - 90px);
+  max-height: calc(100vh - 104px); /* leave room above and below */
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 10px;
   z-index: 15;
-  padding-bottom: 20px;
+  padding: 6px 4px 24px;     /* breathing room top + bottom */
 }
 .rsspanel__head {
   font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
   text-transform: uppercase; color: var(--text-faint);
   padding: 2px 4px;
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
-.rsspanel__close {
-  display: none; /* shown only on small screens */
-  background: none; border: none; color: var(--text-dim);
-  font-size: 20px; line-height: 1; cursor: pointer; padding: 0 4px;
+.rsspanel__headleft { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.rsspanel__ago {
+  font-size: 11px; font-weight: 500; letter-spacing: 0;
+  text-transform: none; color: var(--text-faint); opacity: 0.85;
+  white-space: nowrap;
 }
+.rsspanel__refresh {
+  display: grid; place-items: center; flex: none;
+  width: 20px; height: 20px; padding: 0;
+  border: none; background: none;
+  color: var(--text-faint); cursor: pointer;
+  transition: color 0.15s;
+}
+.rsspanel__refresh:hover { color: var(--text); }
+.rsspanel__refresh svg { display: block; }
 .rsscard {
   display: block;
   text-decoration: none;
@@ -678,6 +705,12 @@ body.has-bg .activefilter {
 }
 .rsscard:hover { border-color: var(--blue); transform: translateY(-1px); background: var(--surface-hover); }
 .rsscard__feed { font-size: 11px; color: var(--blue); margin-bottom: 4px; }
+.rsscard__feedrow { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.rsscard__feedrow .rsscard__feed { margin-bottom: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rsscard__fav {
+  width: 14px; height: 14px; border-radius: 3px; flex: none;
+  object-fit: cover; background: var(--surface-2);
+}
 .rsscard__title { font-size: 13px; font-weight: 600; color: var(--text); line-height: 1.35; }
 .rsscard__summary { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-top: 5px;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
@@ -713,18 +746,28 @@ body.has-bg .rsscard { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
   /* Hide the docked panel; show the toggle button instead. */
   body.has-rss .rsstoggle-btn { display: flex; }
   .rsspanel {
-    top: 0; right: 0; bottom: 0;
+    top: var(--banner-h, 64px);  /* below the sticky banner (measured in JS) */
+    right: 0; bottom: 0;
     width: min(340px, 86vw);
-    max-height: 100vh;
-    background: var(--bg);
-    border-left: 1px solid var(--border);
-    padding: 16px 14px;
+    max-height: none;
+    height: auto;
+    background: rgba(14, 15, 19, 0.72);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding: 14px 14px 24px;
+    overflow-y: auto;
     transform: translateX(105%);
     transition: transform 0.25s ease;
     box-shadow: -8px 0 30px rgba(0,0,0,0.5);
   }
   .rsspanel.rsspanel--open { transform: translateX(0); }
-  .rsspanel__close { display: block; }
+  /* Translucent cards inside the glass drawer for a consistent look. */
+  .rsspanel .rsscard {
+    background: rgba(36, 38, 45, 0.55);
+    border-color: rgba(255, 255, 255, 0.08);
+  }
 }
 
 /* ---------- Avatar images ---------- */
