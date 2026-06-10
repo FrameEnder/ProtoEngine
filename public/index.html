@@ -68,8 +68,14 @@
     <section class="results" id="results" aria-live="polite"></section>
   </main>
 
+  <!-- Favorites grid (left side, home view only) -->
+  <aside class="favpanel" id="favPanel" hidden aria-label="Favorites"></aside>
+
   <!-- RSS feed side panel (populated when the user has feeds for this view) -->
   <aside class="rsspanel" id="rssPanel" hidden aria-label="RSS feeds"></aside>
+  <button class="favtoggle-btn" id="favToggleBtn" type="button" title="Show favorites" aria-label="Show favorites">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 17l-5.3 2.8 1-5.8-4.2-4.1 5.9-.9z" fill="currentColor"/></svg>
+  </button>
   <button class="rsstoggle-btn" id="rssToggleBtn" type="button" title="Show feeds" aria-label="Show RSS feeds">
     <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M5 11a9 9 0 0 1 9 9M5 5a15 15 0 0 1 15 15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="6" cy="19" r="1.6" fill="currentColor"/></svg>
   </button>
