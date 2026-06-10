@@ -299,7 +299,79 @@ function applyStateToUrl(push) {
 }
 
 // ---------- search ----------
-let searchTimer;
+let suggestTimer;
+const suggestState = { items: [], active: -1 };
+
+// Fetch up to 5 autocomplete suggestions for the typed query and show them.
+async function fetchSuggestions(q) {
+  try {
+    const d = await api('/sites/suggest?q=' + encodeURIComponent(q));
+    showSuggest(d.suggestions || []);
+  } catch {
+    hideSuggest();
+  }
+}
+
+function showSuggest(items) {
+  const list = $('#suggestList');
+  const input = $('#searchInput');
+  suggestState.items = items;
+  suggestState.active = -1;
+  list.innerHTML = '';
+  if (!items.length) { hideSuggest(); return; }
+  items.forEach((s, i) => {
+    const li = el('li', {
+      class: 'suggest__item',
+      role: 'option',
+      onmousedown: (e) => { e.preventDefault(); chooseSuggestion(s); },
+    },
+      el('span', { class: 'suggest__icon' }, s.type === 'tag' ? '#' : '\u2315'),
+      el('span', { class: 'suggest__text' }, s.value),
+      el('span', { class: 'suggest__type' }, s.type === 'tag' ? 'tag' : 'site'),
+    );
+    li.dataset.i = String(i);
+    list.append(li);
+  });
+  list.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+}
+
+function hideSuggest() {
+  const list = $('#suggestList');
+  if (list) { list.hidden = true; list.innerHTML = ''; }
+  suggestState.items = [];
+  suggestState.active = -1;
+  const input = $('#searchInput');
+  if (input) input.setAttribute('aria-expanded', 'false');
+}
+
+function paintSuggestActive() {
+  const list = $('#suggestList');
+  [...list.children].forEach((li, i) => {
+    li.classList.toggle('suggest__item--active', i === suggestState.active);
+  });
+}
+
+// Pick a suggestion: a tag filters by that tag; a site name searches for it.
+function chooseSuggestion(s) {
+  const input = $('#searchInput');
+  hideSuggest();
+  if (s.type === 'tag') {
+    // Add the tag to the active filters and clear the text query.
+    input.value = '';
+    state.query = '';
+    if (!state.tags.includes(s.value)) state.tags.push(s.value);
+    updateActiveFilter();
+  } else {
+    input.value = s.value;
+    state.query = s.value;
+  }
+  state.page = 1;
+  applyStateToUrl(true);
+  loadSites();
+  input.blur();
+}
+
 async function loadSites() {
   const params = new URLSearchParams();
   if (state.query) params.set('q', state.query);
@@ -1364,26 +1436,61 @@ function formatRssDate(d) {
 // ---------- wire up ----------
 function init() {
   const input = $('#searchInput');
-  input.addEventListener('input', () => {
-    state.query = input.value.trim();
-    state.page = 1;
-    $('#clearBtn').hidden = !input.value;
-    clearTimeout(searchTimer);
-    // While typing: live results + replace URL (no history spam).
-    searchTimer = setTimeout(() => { applyStateToUrl(false); loadSites(); }, 180);
-  });
-  $('#searchForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    clearTimeout(searchTimer);
+
+  // Run a committed search (Enter, search button, or chosen suggestion).
+  function runSearch() {
+    clearTimeout(suggestTimer);
+    hideSuggest();
     state.query = input.value.trim();
     state.page = 1;
     applyStateToUrl(true); // committed search -> history entry
     loadSites();
     input.blur();
+  }
+
+  // As you type: fetch suggestions, don't search. Search waits for Enter,
+  // the search button, or picking a suggestion.
+  input.addEventListener('input', () => {
+    $('#clearBtn').hidden = !input.value;
+    clearTimeout(suggestTimer);
+    const q = input.value.trim();
+    if (!q) { hideSuggest(); return; }
+    suggestTimer = setTimeout(() => fetchSuggestions(q), 140);
   });
+
+  // Keyboard navigation within the suggestion list.
+  input.addEventListener('keydown', (e) => {
+    const items = suggestState.items;
+    if (e.key === 'ArrowDown' && items.length) {
+      e.preventDefault();
+      suggestState.active = (suggestState.active + 1) % items.length;
+      paintSuggestActive();
+    } else if (e.key === 'ArrowUp' && items.length) {
+      e.preventDefault();
+      suggestState.active = (suggestState.active - 1 + items.length) % items.length;
+      paintSuggestActive();
+    } else if (e.key === 'Enter') {
+      // If a suggestion is highlighted, choose it; otherwise search the text.
+      if (suggestState.active >= 0 && items[suggestState.active]) {
+        e.preventDefault();
+        chooseSuggestion(items[suggestState.active]);
+      }
+      // else: let the form submit handler run the search.
+    } else if (e.key === 'Escape') {
+      hideSuggest();
+    }
+  });
+
+  $('#searchForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    runSearch();
+  });
+  // Hide suggestions when focus leaves the search area.
+  input.addEventListener('blur', () => { setTimeout(hideSuggest, 120); });
+
   $('#clearBtn').addEventListener('click', () => {
     input.value = ''; state.query = ''; state.page = 1;
-    $('#clearBtn').hidden = true; input.focus();
+    $('#clearBtn').hidden = true; hideSuggest(); input.focus();
     applyStateToUrl(true);
     loadSites();
   });
