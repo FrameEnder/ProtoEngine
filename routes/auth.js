@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { db } from '../data-store.js';
 import { requireAuth } from '../middleware/auth.js';
-import { uid, validUsername, validPassword } from '../util.js';
+import { uid, validUsername, validPassword, clampStr } from '../util.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AVATAR_DIR = path.join(__dirname, '..', 'public', 'avatars');
@@ -66,6 +66,7 @@ router.get('/me', async (req, res) => {
       role: u.role,
       avatar: u.avatar || null,
       background: u.background || null,
+      favorites: Array.isArray(u.favorites) ? u.favorites : [],
       hasApiKey: !!u.apiKeyHash,
     },
   });
@@ -217,6 +218,49 @@ router.delete('/background', requireAuth, async (req, res) => {
   }
   await db.updateUser(me.id, { background: null });
   res.json({ ok: true });
+});
+
+// ---- Favorites (per-user, ordered list of site IDs) ----
+
+// Toggle a site as a favorite. Body: { siteId }. Adds to the end if absent,
+// removes if present. Returns the updated ordered list.
+router.post('/favorites/toggle', requireAuth, async (req, res) => {
+  const me = await db.getUserById(req.user.id);
+  if (!me) return res.status(404).json({ error: 'Account not found.' });
+  const siteId = clampStr((req.body && req.body.siteId) || '', 40);
+  if (!siteId) return res.status(400).json({ error: 'A site id is required.' });
+
+  // Confirm the site exists before favoriting it.
+  const site = await db.getSiteById(siteId);
+  if (!site) return res.status(404).json({ error: 'Listing not found.' });
+
+  let favorites = Array.isArray(me.favorites) ? me.favorites.slice() : [];
+  const i = favorites.indexOf(siteId);
+  if (i === -1) favorites.push(siteId);
+  else favorites.splice(i, 1);
+  await db.updateUser(me.id, { favorites });
+  res.json({ favorites });
+});
+
+// Replace the favorites order (drag-and-drop reorder). Body: { order: [ids] }.
+// Only ids already in the user's favorites are kept, in the given order.
+router.patch('/favorites/order', requireAuth, async (req, res) => {
+  const me = await db.getUserById(req.user.id);
+  if (!me) return res.status(404).json({ error: 'Account not found.' });
+  const order = Array.isArray(req.body && req.body.order) ? req.body.order : null;
+  if (!order) return res.status(400).json({ error: 'An order array is required.' });
+
+  const current = new Set(Array.isArray(me.favorites) ? me.favorites : []);
+  // Keep only known favorites, in the requested order, de-duplicated.
+  const seen = new Set();
+  const next = [];
+  for (const id of order) {
+    if (current.has(id) && !seen.has(id)) { seen.add(id); next.push(id); }
+  }
+  // Append any favorites the client didn't mention (safety).
+  for (const id of current) if (!seen.has(id)) next.push(id);
+  await db.updateUser(me.id, { favorites: next });
+  res.json({ favorites: next });
 });
 
 // Generate (or regenerate) an API key for the current user. The full key is
