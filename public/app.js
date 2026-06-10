@@ -30,6 +30,7 @@ const state = {
   matched: 0,
   sites: [],
   allTags: null,     // cached [{tag,count}] for pickers
+  rssRefreshMinutes: 5,
 };
 
 // Is any filter active (used to decide the "searching" layout)?
@@ -876,9 +877,11 @@ async function renderRssTab(panel) {
   panel.append(el('div', { class: 'placeholder', style: 'padding:24px' }, 'Loading feeds…'));
 
   let feeds = [];
+  let refreshMinutes = state.rssRefreshMinutes || 5;
   try {
     const d = await api('/rss/feeds');
     feeds = d.feeds || [];
+    if (Number.isFinite(d.refreshMinutes)) refreshMinutes = d.refreshMinutes;
   } catch (e) {
     panel.innerHTML = '';
     panel.append(el('div', { class: 'placeholder' }, e.message));
@@ -959,6 +962,24 @@ async function renderRssTab(panel) {
   }
   renderList();
 
+  // Refresh interval control.
+  const refreshInput = el('input', {
+    type: 'number', min: '1', max: '1440', value: String(refreshMinutes),
+    style: 'width:90px;flex:none',
+  });
+  const refreshSave = el('button', { class: 'btn btn--ghost btn--small', type: 'button' }, 'Save');
+  refreshSave.addEventListener('click', async () => {
+    const m = parseInt(refreshInput.value, 10);
+    if (!Number.isInteger(m) || m < 1) { toast('Refresh must be at least 1 minute.', true); return; }
+    try {
+      const d = await api('/rss/settings', { method: 'PATCH', body: { refreshMinutes: m } });
+      state.rssRefreshMinutes = d.refreshMinutes;
+      refreshInput.value = String(d.refreshMinutes);
+      armRssRefresh();
+      toast('Refresh interval saved.');
+    } catch (e) { toast(e.message, true); }
+  });
+
   panel.append(
     el('div', { class: 'account__sectionlabel' }, 'RSS feeds'),
     el('div', { class: 'field__hint', style: 'margin-bottom:10px' },
@@ -966,6 +987,11 @@ async function renderRssTab(panel) {
     el('div', { class: 'rssadd' }, urlInput, addBtn),
     addMsg,
     list,
+    el('hr', { class: 'account__rule' }),
+    el('div', { class: 'account__sectionlabel' }, 'Refresh interval'),
+    el('div', { class: 'field__hint', style: 'margin-bottom:8px' }, 'How often the feed panel updates, in minutes (default 5).'),
+    el('div', { style: 'display:flex;gap:8px;align-items:center' },
+      refreshInput, el('span', { class: 'field__hint', style: 'margin:0' }, 'minutes'), refreshSave),
   );
 }
 
@@ -1221,8 +1247,49 @@ function applyBackground() {
   }
 }
 
+// (Re)start the periodic RSS refresh using the user's configured interval.
+let rssRefreshTimer = null;
+function armRssRefresh() {
+  if (rssRefreshTimer) clearInterval(rssRefreshTimer);
+  if (!state.user) return;
+  const mins = Number.isFinite(state.rssRefreshMinutes) ? state.rssRefreshMinutes : 5;
+  rssRefreshTimer = setInterval(() => { loadRssPanel(); }, Math.max(1, mins) * 60 * 1000);
+}
+
+// Fetch the user's RSS settings (refresh interval) once after login/load.
+async function loadRssSettings() {
+  if (!state.user) { armRssRefresh(); return; }
+  try {
+    const d = await api('/rss/feeds');
+    if (Number.isFinite(d.refreshMinutes)) state.rssRefreshMinutes = d.refreshMinutes;
+  } catch { /* keep default */ }
+  armRssRefresh();
+}
+
 // Load and render the RSS side panel for the current view (main vs search).
 // Only shown when signed in and the user has feeds flagged for this context.
+// Live "refreshed N ago" label that ticks up: seconds, then minutes, hours.
+let rssAgoTimer = null;
+function formatAgo(ms) {
+  const s = Math.floor(ms / 1000);
+  if (s < 5) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  return `${h}h ago`;
+}
+function armRssAgoTicker() {
+  if (rssAgoTimer) clearInterval(rssAgoTimer);
+  const tick = () => {
+    const el2 = $('#rssAgo');
+    if (!el2 || !state.rssLastRefresh) return;
+    el2.textContent = formatAgo(Date.now() - state.rssLastRefresh);
+  };
+  tick();
+  rssAgoTimer = setInterval(tick, 1000);
+}
+
 async function loadRssPanel() {
   const panel = $('#rssPanel');
   if (!panel) return;
@@ -1238,19 +1305,40 @@ async function loadRssPanel() {
       return;
     }
     panel.innerHTML = '';
-    const head = el('div', { class: 'rsspanel__head' }, el('span', {}, 'Feeds'));
-    const closeBtn = el('button', { class: 'rsspanel__close', 'aria-label': 'Close feeds' }, '×');
-    closeBtn.addEventListener('click', () => panel.classList.remove('rsspanel--open'));
-    head.append(closeBtn);
+    state.rssLastRefresh = Date.now();
+    const head = el('div', { class: 'rsspanel__head' });
+    const left = el('div', { class: 'rsspanel__headleft' },
+      el('span', {}, 'Feeds'),
+      el('span', { class: 'rsspanel__ago', id: 'rssAgo' }, 'just now'),
+    );
+    const refreshBtn = el('button', {
+      class: 'rsspanel__refresh',
+      'aria-label': 'Refresh feeds',
+      title: 'Refresh feeds',
+      html: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 12.8-5.3M19.5 12a7.5 7.5 0 0 1-12.8 5.3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M17 3v4h-4M7 21v-4h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    });
+    refreshBtn.addEventListener('click', () => { loadRssPanel(); });
+    head.append(left, refreshBtn);
     panel.append(head);
+    armRssAgoTicker();
     for (const e of entries) {
+      // Feed header row: favicon + feed name.
+      const fhead = el('div', { class: 'rsscard__feedrow' });
+      if (e.favicon) {
+        const fav = el('img', { class: 'rsscard__fav', src: e.favicon, alt: '', loading: 'lazy' });
+        // Hide the icon gracefully if the site has no /favicon.ico.
+        fav.addEventListener('error', () => fav.remove());
+        fhead.append(fav);
+      }
+      fhead.append(el('span', { class: 'rsscard__feed' }, e.feedTitle || ''));
+
       const card = el('a', {
         class: 'rsscard',
         href: e.link || '#',
         target: '_blank',
         rel: 'noopener noreferrer',
       },
-        el('div', { class: 'rsscard__feed' }, e.feedTitle || ''),
+        fhead,
         el('div', { class: 'rsscard__title' }, e.title || '(no title)'),
         e.summary ? el('div', { class: 'rsscard__summary' }, e.summary) : null,
         e.date ? el('div', { class: 'rsscard__date' }, formatRssDate(e.date)) : null,
@@ -1305,7 +1393,12 @@ function init() {
   $('#signinBtn').addEventListener('click', () => openAuthModal('login'));
   // RSS drawer toggle (small screens).
   $('#rssToggleBtn').addEventListener('click', () => {
-    $('#rssPanel').classList.toggle('rsspanel--open');
+    const panel = $('#rssPanel');
+    // Set the banner height as a CSS var; only the mobile drawer rule uses it,
+    // so the desktop docked panel keeps its own top from the stylesheet.
+    const topbar = $('#topbar');
+    if (topbar) panel.style.setProperty('--banner-h', topbar.getBoundingClientRect().height + 'px');
+    panel.classList.toggle('rsspanel--open');
   });
   $('#adminBtn').addEventListener('click', () => {
     $('#userMenuDropdown').hidden = true;
@@ -1409,6 +1502,7 @@ async function bootstrap() {
   syncChrome();
   syncInputToState();   // populate query/tag/page + input box from the URL
   loadSites();
+  loadRssSettings();    // fetch refresh interval and arm the auto-refresh
 }
 
 init();
