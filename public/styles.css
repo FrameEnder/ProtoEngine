@@ -787,6 +787,7 @@ body.has-bg .rsscard { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
     border-top: 1px solid rgba(255, 255, 255, 0.08);
     padding: 14px 14px 24px;
     overflow-y: auto;
+    overscroll-behavior: contain;
     transform: translateX(105%);
     transition: transform 0.25s ease;
     box-shadow: -8px 0 30px rgba(0,0,0,0.5);
@@ -797,6 +798,164 @@ body.has-bg .rsscard { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
     background: rgba(36, 38, 45, 0.55);
     border-color: rgba(255, 255, 255, 0.08);
   }
+}
+
+/* ---------- Per-listing controls: favorite star + 3-dot menu ---------- */
+.result { position: relative; }
+.result__controls {
+  position: absolute; top: 0; right: 0;
+  display: flex; align-items: center; gap: 2px;
+}
+.result__star, .result__dots {
+  display: grid; place-items: center;
+  width: 30px; height: 30px; border-radius: 8px;
+  border: none; background: none; color: var(--text-faint);
+  cursor: pointer; transition: color 0.15s, background 0.15s;
+}
+.result__star:hover, .result__dots:hover { background: var(--surface-hover); color: var(--text); }
+.result__star--on { color: var(--amber); }
+.result__star--on:hover { color: var(--amber); }
+.result__star svg, .result__dots svg { display: block; }
+.result__menu { position: relative; }
+.result__menudrop {
+  position: absolute; top: calc(100% + 4px); right: 0;
+  min-width: 130px; padding: 6px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: var(--shadow); z-index: 25;
+}
+.result__menuitem {
+  display: block; width: 100%; text-align: left;
+  padding: 8px 10px; border: none; background: none; border-radius: 7px;
+  color: var(--text); font-size: 13px; cursor: pointer;
+}
+.result__menuitem:hover { background: var(--surface-hover); }
+.result__menuitem--danger { color: var(--red); }
+
+/* ---------- Favorites panel (left side, home view) ---------- */
+.favpanel {
+  position: fixed;
+  top: 84px;
+  left: 16px;
+  width: 240px;
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
+  z-index: 15;
+  padding: 6px 4px 24px;
+}
+.favpanel__head {
+  font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; color: var(--text-faint);
+  padding: 2px 4px 10px;
+}
+.favgrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.favtile {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  aspect-ratio: 1 / 1;          /* fixed square */
+  min-width: 0;                 /* allow the grid cell to shrink, not stretch */
+  padding: 8px; border-radius: 12px;
+  background: var(--surface); border: 1px solid var(--border);
+  -webkit-touch-callout: none;  /* no long-press link callout on iOS */
+  -webkit-user-select: none; user-select: none;
+  text-decoration: none; color: var(--text);
+  cursor: grab; overflow: hidden;
+  transition: border-color 0.15s, transform 0.1s, background 0.15s;
+}
+.favtile:hover { border-color: var(--blue); transform: translateY(-1px); background: var(--surface-hover); }
+.favtile__icon { width: 32px; height: 32px; flex: none; display: grid; place-items: center; }
+.favtile__icon img, .favtile__icon .result__favicon {
+  width: 32px; height: 32px; border-radius: 8px; font-size: 15px;
+}
+/* The name lives in a fixed-width viewport; long names marquee on hover so
+   they never widen the square tile. */
+.favtile__name {
+  font-size: 11px; line-height: 1.2;
+  width: 100%; max-width: 100%; overflow: hidden;
+  white-space: nowrap; text-align: center;
+}
+.favtile__name span {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  vertical-align: bottom;
+}
+/* When marqueeing, unclamp the span so its full text width is scrollable. */
+.favtile__name--marquee span {
+  max-width: none;
+  overflow: visible; text-overflow: clip;
+}
+.favtile__name--marquee:hover span {
+  animation: fav-marquee 5s ease-in-out infinite alternate;
+}
+@keyframes fav-marquee {
+  0%, 15% { transform: translateX(0); }
+  85%, 100% { transform: translateX(var(--marquee-dist, 0)); }
+}
+.favtile--dragging { opacity: 0.35; touch-action: none; }
+.favtile--over { border-color: var(--blue); border-style: dashed; }
+/* Allow vertical page scroll but let us hijack the gesture once dragging. */
+.favtile { touch-action: pan-y; }
+/* Floating drag preview that follows the pointer. */
+.favtile--ghost {
+  position: fixed; z-index: 60; margin: 0;
+  pointer-events: none;
+  transform: translate(-50%, -50%) scale(1.06);
+  box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+  border-color: var(--blue) !important;
+  opacity: 0.95;
+}
+
+body.has-bg .favtile { background: rgba(27,29,34,0.55); backdrop-filter: blur(12px); border-color: rgba(255,255,255,0.08); }
+
+/* Floating favorites toggle button (small screens). Sits above the RSS one. */
+.favtoggle-btn {
+  display: none;
+  position: fixed; right: 16px; bottom: 80px; z-index: 16;
+  width: 48px; height: 48px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--amber); color: #1a1400;
+  align-items: center; justify-content: center;
+  box-shadow: var(--shadow); cursor: pointer;
+}
+
+/* Make room for the favorites panel on wide screens (home view). */
+@media (min-width: 1200px) {
+/* Favorites panel floats over the left margin; the stage stays centered
+   (its own margin: 0 auto), so the hero and search bar don't shift. */
+}
+
+/* Below 1200px: favorites becomes a slide-in drawer from the left with a
+   floating toggle button (above the RSS toggle). */
+@media (max-width: 1199px) {
+  body.has-fav .favtoggle-btn { display: flex; }
+  .favpanel {
+    top: var(--banner-h, 64px);
+    left: 0; bottom: 0;
+    width: min(300px, 84vw);
+    max-height: none;
+    background: rgba(14,15,19,0.72);
+    backdrop-filter: blur(18px) saturate(140%);
+    -webkit-backdrop-filter: blur(18px) saturate(140%);
+    border-right: 1px solid rgba(255,255,255,0.08);
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding: 14px 14px 24px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    transform: translateX(-105%);
+    transition: transform 0.25s ease;
+    box-shadow: 8px 0 30px rgba(0,0,0,0.5);
+  }
+  .favpanel.favpanel--open { transform: translateX(0); }
+  .favgrid { grid-template-columns: repeat(3, 1fr); }
+  body.has-fav:not(.searching) .stage { margin-left: 0; }
+}
+
+/* Lock page scrolling while a mobile drawer is open so touch scrolling stays
+   inside the drawer. Only matters at drawer widths (<=1199px). */
+@media (max-width: 1199px) {
+  body.drawer-open { overflow: hidden; }
 }
 
 /* ---------- Avatar images ---------- */
