@@ -15,7 +15,7 @@ const parser = new XMLParser({
 // In-memory cache of fetched feeds: url -> { at, entries }. Keeps the right
 // panel snappy and avoids hammering source servers.
 const feedCache = new Map();
-const CACHE_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_MS = 60 * 1000; // 60s fetch cache (dedupes rapid refreshes)
 
 function asArray(x) {
   if (x === undefined || x === null) return [];
@@ -35,18 +35,65 @@ function textOf(v) {
 }
 
 // Strip HTML tags and collapse whitespace for a clean snippet.
+// Common named HTML entities mapped to their characters. Numeric references
+// (&#8217; and &#x2019;) are handled generically below, so this table only
+// needs the named ones that feeds commonly use.
+const NAMED_ENTITIES = {
+  nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+  ndash: '\u2013', mdash: '\u2014',
+  lsquo: '\u2018', rsquo: '\u2019', sbquo: '\u201A',
+  ldquo: '\u201C', rdquo: '\u201D', bdquo: '\u201E',
+  hellip: '\u2026', middot: '\u00B7', bull: '\u2022',
+  copy: '\u00A9', reg: '\u00AE', trade: '\u2122',
+  deg: '\u00B0', plusmn: '\u00B1', times: '\u00D7', divide: '\u00F7',
+  frac12: '\u00BD', frac14: '\u00BC', frac34: '\u00BE',
+  laquo: '\u00AB', raquo: '\u00BB',
+  euro: '\u20AC', pound: '\u00A3', cent: '\u00A2', yen: '\u00A5',
+  sect: '\u00A7', para: '\u00B6', dagger: '\u2020', Dagger: '\u2021',
+  prime: '\u2032', Prime: '\u2033',
+  larr: '\u2190', rarr: '\u2192', uarr: '\u2191', darr: '\u2193', harr: '\u2194',
+  eacute: '\u00E9', egrave: '\u00E8', agrave: '\u00E0', ccedil: '\u00E7',
+  uuml: '\u00FC', ouml: '\u00F6', auml: '\u00E4', ntilde: '\u00F1',
+};
+
+// Decode HTML entities: named (&rsquo;), decimal (&#8217;), and hex (&#x2019;).
+function decodeEntities(str) {
+  return String(str).replace(/&(#x?[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g, (match, body) => {
+    if (body[0] === '#') {
+      // Numeric reference: decimal (#123) or hex (#x1F).
+      const code = body[1] === 'x' || body[1] === 'X'
+        ? parseInt(body.slice(2), 16)
+        : parseInt(body.slice(1), 10);
+      if (Number.isFinite(code) && code > 0 && code <= 0x10FFFF) {
+        try { return String.fromCodePoint(code); } catch { return match; }
+      }
+      return match;
+    }
+    // Named reference.
+    return Object.prototype.hasOwnProperty.call(NAMED_ENTITIES, body)
+      ? NAMED_ENTITIES[body]
+      : match;
+  });
+}
+
+// Strip HTML tags and decode entities for a clean snippet. Decodes twice to
+// handle feeds that double-encode (e.g. "&amp;rsquo;").
 function clean(html, max = 280) {
-  return String(html || '')
-    .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&#39;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, max);
+  let out = String(html || '').replace(/<[^>]*>/g, ' ');
+  out = decodeEntities(out);
+  // A second pass resolves double-encoded entities; harmless if there were
+  // none (no remaining &…; sequences to decode).
+  if (out.includes('&')) out = decodeEntities(out);
+  return out.replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+// Clean a title: strip any tags, decode entities (twice for double-encoding),
+// collapse whitespace. Kept longer than summaries.
+function cleanTitle(s) {
+  let out = String(s || '').replace(/<[^>]*>/g, ' ');
+  out = decodeEntities(out);
+  if (out.includes('&')) out = decodeEntities(out);
+  return out.replace(/\s+/g, ' ').trim().slice(0, 300);
 }
 
 // Normalize a parsed RSS 2.0 or Atom document into a common shape.
@@ -54,9 +101,9 @@ function normalizeFeed(xmlObj) {
   // RSS 2.0
   if (xmlObj.rss && xmlObj.rss.channel) {
     const ch = xmlObj.rss.channel;
-    const title = textOf(ch.title) || 'Untitled feed';
+    const title = cleanTitle(textOf(ch.title)) || 'Untitled feed';
     const items = asArray(ch.item).map((it) => ({
-      title: textOf(it.title) || '(no title)',
+      title: cleanTitle(textOf(it.title)) || '(no title)',
       link: textOf(it.link),
       date: textOf(it.pubDate) || textOf(it['dc:date']) || '',
       summary: clean(textOf(it.description) || textOf(it['content:encoded'])),
@@ -66,7 +113,7 @@ function normalizeFeed(xmlObj) {
   // Atom
   if (xmlObj.feed) {
     const f = xmlObj.feed;
-    const title = textOf(f.title) || 'Untitled feed';
+    const title = cleanTitle(textOf(f.title)) || 'Untitled feed';
     const items = asArray(f.entry).map((e) => {
       // Atom links can be an array of {@_href,@_rel}; prefer rel="alternate".
       let link = '';
@@ -74,7 +121,7 @@ function normalizeFeed(xmlObj) {
       const alt = links.find((l) => l['@_rel'] === 'alternate') || links[0];
       if (alt) link = alt['@_href'] || '';
       return {
-        title: textOf(e.title) || '(no title)',
+        title: cleanTitle(textOf(e.title)) || '(no title)',
         link,
         date: textOf(e.updated) || textOf(e.published) || '',
         summary: clean(textOf(e.summary) || textOf(e.content)),
@@ -124,11 +171,25 @@ async function fetchFeed(url) {
 
 // ---- Feed management (per user) ----
 
-// List the current user's configured feeds.
+// List the current user's configured feeds plus the refresh interval.
 router.get('/feeds', requireAuth, async (req, res) => {
   const u = await db.getUserById(req.user.id);
   if (!u) return res.status(404).json({ error: 'Account not found.' });
-  res.json({ feeds: u.rssFeeds || [] });
+  res.json({
+    feeds: u.rssFeeds || [],
+    refreshMinutes: Number.isFinite(u.rssRefreshMinutes) ? u.rssRefreshMinutes : 5,
+  });
+});
+
+// Update RSS settings (currently just the refresh interval, in minutes).
+router.patch('/settings', requireAuth, async (req, res) => {
+  const u = await db.getUserById(req.user.id);
+  if (!u) return res.status(404).json({ error: 'Account not found.' });
+  let m = parseInt((req.body && req.body.refreshMinutes), 10);
+  if (!Number.isInteger(m) || m < 1) return res.status(400).json({ error: 'Refresh must be at least 1 minute.' });
+  if (m > 1440) m = 1440; // cap at 24h
+  await db.updateUser(u.id, { rssRefreshMinutes: m });
+  res.json({ refreshMinutes: m });
 });
 
 // Add a feed.
@@ -201,6 +262,8 @@ router.get('/entries', requireAuth, async (req, res) => {
   await Promise.all(feeds.map(async (f) => {
     try {
       const data = await fetchFeed(f.url);
+      // Favicon derived from the feed's own URL origin as a fallback, and
+      // per-entry from each item's link domain when available.
       for (const item of data.items.slice(0, 12)) {
         out.push({
           feedId: f.id,
@@ -209,6 +272,7 @@ router.get('/entries', requireAuth, async (req, res) => {
           link: item.link,
           summary: item.summary,
           date: item.date,
+          favicon: faviconFor(item.link || f.url),
           ts: item.date ? Date.parse(item.date) || 0 : 0,
         });
       }
@@ -220,5 +284,16 @@ router.get('/entries', requireAuth, async (req, res) => {
   out.sort((a, b) => b.ts - a.ts);
   res.json({ entries: out.slice(0, 60) });
 });
+
+// Build a favicon URL for a page link: its origin + /favicon.ico. The browser
+// loads this directly in an <img>, so no server-side fetch is needed.
+function faviconFor(link) {
+  try {
+    const u = new URL(link);
+    return `${u.origin}/favicon.ico`;
+  } catch {
+    return null;
+  }
+}
 
 export default router;
