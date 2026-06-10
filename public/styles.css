@@ -617,12 +617,41 @@ body.has-bg .activefilter {
 .accountbg__img--empty { background: var(--surface-2); }
 
 /* ---------- Search bar filter button ---------- */
-.searchbar__filter {
+.searchbar { position: relative; }
+.searchbar__filter,
+.searchbar__go {
   width: 32px; height: 32px; flex: none; margin-left: 2px;
   border: 1px solid transparent; background: transparent; color: var(--text-dim);
 }
-.searchbar__filter:hover { background: var(--surface-hover); color: var(--text); border-color: var(--border); }
+.searchbar__filter:hover,
+.searchbar__go:hover { background: var(--surface-hover); color: var(--text); border-color: var(--border); }
+.searchbar__go { color: var(--blue); }
+.searchbar__go:hover { color: var(--blue-press); border-color: var(--blue); }
 .iconbtn--active { color: var(--blue) !important; border-color: var(--blue) !important; }
+
+/* ---------- Autocomplete suggestions ---------- */
+.suggest {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0; right: 0;
+  margin: 0; padding: 6px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  z-index: 30;
+}
+.suggest__item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 9px;
+  cursor: pointer; color: var(--text);
+}
+.suggest__item--active,
+.suggest__item:hover { background: var(--surface-hover); }
+.suggest__icon { color: var(--text-faint); width: 16px; text-align: center; flex: none; }
+.suggest__text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.suggest__type { font-size: 11px; color: var(--text-faint); flex: none; text-transform: uppercase; letter-spacing: 0.04em; }
 
 /* ---------- Tag pickers (filter popup + add/edit suggestions) ---------- */
 .tagpick {
