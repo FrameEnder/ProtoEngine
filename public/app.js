@@ -106,6 +106,226 @@ function canManage(site) {
   return site.ownerId === state.user.id;
 }
 
+// ---------- favorites ----------
+function isFavorite(id) {
+  return !!(state.user && Array.isArray(state.user.favorites) && state.user.favorites.includes(id));
+}
+
+function starSvg(filled) {
+  return filled
+    ? '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 17l-5.3 2.8 1-5.8-4.2-4.1 5.9-.9z" fill="currentColor"/></svg>'
+    : '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 17l-5.3 2.8 1-5.8-4.2-4.1 5.9-.9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+}
+
+async function toggleFavorite(siteId) {
+  if (!state.user) return;
+  try {
+    const d = await api('/auth/favorites/toggle', { method: 'POST', body: { siteId } });
+    state.user.favorites = d.favorites || [];
+    renderResults();      // refresh star states
+    renderFavorites();    // refresh the grid
+  } catch (e) { toast(e.message, true); }
+}
+
+// Result 3-dot menu open/close.
+function closeAllResultMenus() {
+  document.querySelectorAll('.result__menudrop').forEach((d) => { d.hidden = true; });
+}
+function toggleResultMenu(menuWrap) {
+  const drop = menuWrap.querySelector('.result__menudrop');
+  const wasHidden = drop.hidden;
+  closeAllResultMenus();
+  drop.hidden = !wasHidden;
+}
+
+// Render the favorites grid (an app-grid of favicons, drag-to-reorder). Shown
+// on the home view when signed in with at least one favorite.
+// Pointer-based drag for favorite tiles — works with mouse AND touch, shows a
+// floating preview that follows the pointer, and reorders live as you hover
+// other tiles. Listeners live on window during a drag so moves are never lost.
+function attachFavDrag(tile, site, grid) {
+  let startX = 0, startY = 0, dragging = false, ghost = null;
+  let isTouch = false, armed = false, holdTimer = null;
+
+  function onDown(e) {
+    if (e.button != null && e.button !== 0) return; // left button / touch only
+    startX = e.clientX; startY = e.clientY;
+    dragging = false;
+    isTouch = e.pointerType === 'touch';
+    armed = !isTouch; // mouse: armed immediately; touch: arm after long-press
+
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+
+    if (isTouch) {
+      // Long-press to pick up (like rearranging phone icons). If the finger
+      // moves much before this fires, it's a scroll and we cancel.
+      holdTimer = setTimeout(() => {
+        armed = true;
+        beginDrag();
+        if (navigator.vibrate) { try { navigator.vibrate(15); } catch {} }
+      }, 250);
+    }
+  }
+
+  function beginDrag() {
+    dragging = true;
+    tile.classList.add('favtile--dragging');
+    const r = tile.getBoundingClientRect();
+    ghost = tile.cloneNode(true);
+    ghost.classList.add('favtile--ghost');
+    ghost.style.width = r.width + 'px';
+    ghost.style.height = r.height + 'px';
+    document.body.append(ghost);
+    moveGhost(startX, startY);
+  }
+
+  function moveGhost(x, y) {
+    if (ghost) { ghost.style.left = x + 'px'; ghost.style.top = y + 'px'; }
+  }
+
+  function onMove(e) {
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+
+    // Touch, before the long-press fires: if the finger moves, treat it as a
+    // scroll — cancel the pending drag and let the drawer scroll normally.
+    if (isTouch && !armed) {
+      if (Math.hypot(dx, dy) > 8) cleanup();
+      return;
+    }
+    // Mouse: start dragging once past the movement threshold.
+    if (!dragging) {
+      if (Math.hypot(dx, dy) < 6) return;
+      beginDrag();
+    }
+    e.preventDefault();
+    moveGhost(e.clientX, e.clientY);
+
+    // Hide the ghost for the hit-test so elementFromPoint sees the tile below.
+    ghost.style.display = 'none';
+    const under = document.elementFromPoint(e.clientX, e.clientY);
+    ghost.style.display = '';
+    const overTile = under && under.closest('.favtile');
+
+    grid.querySelectorAll('.favtile--over').forEach((t) => t.classList.remove('favtile--over'));
+    if (overTile && overTile !== tile && overTile.parentElement === grid) {
+      overTile.classList.add('favtile--over');
+      const tiles = [...grid.children];
+      if (tiles.indexOf(overTile) < tiles.indexOf(tile)) grid.insertBefore(tile, overTile);
+      else grid.insertBefore(tile, overTile.nextSibling);
+    }
+  }
+
+  function cleanup() {
+    clearTimeout(holdTimer); holdTimer = null;
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+    window.removeEventListener('pointercancel', onUp);
+  }
+
+  function onUp() {
+    clearTimeout(holdTimer); holdTimer = null;
+    cleanup();
+    if (ghost) { ghost.remove(); ghost = null; }
+    grid.querySelectorAll('.favtile--over').forEach((t) => t.classList.remove('favtile--over'));
+    if (dragging) {
+      tile.classList.remove('favtile--dragging');
+      const order = [...grid.children].map((t) => t.dataset.id);
+      persistFavOrder(order);
+      // Suppress the click that would otherwise open the link right after drag.
+      tile.addEventListener('click', suppressOnce, true);
+    }
+    dragging = false;
+  }
+
+  function suppressOnce(e) {
+    e.preventDefault(); e.stopPropagation();
+    tile.removeEventListener('click', suppressOnce, true);
+  }
+
+  // Stop the browser's native image/link drag on the anchor (competes with us).
+  tile.addEventListener('dragstart', (e) => e.preventDefault());
+  tile.setAttribute('draggable', 'false');
+  // Suppress the native long-press context menu / link callout, which on
+  // touch fires during a long-press and cancels our pick-up.
+  tile.addEventListener('contextmenu', (e) => e.preventDefault());
+  tile.addEventListener('pointerdown', onDown);
+}
+
+async function renderFavorites() {
+  const panel = $('#favPanel');
+  if (!panel) return;
+  const ids = (state.user && state.user.favorites) || [];
+  if (!state.user || !ids.length || isSearching()) {
+    panel.hidden = true; panel.innerHTML = '';
+    document.body.classList.remove('has-fav');
+    return;
+  }
+
+  let sites = [];
+  try {
+    const d = await api('/sites/by-ids?ids=' + encodeURIComponent(ids.join(',')));
+    sites = d.sites || [];
+  } catch { sites = []; }
+  if (!sites.length) {
+    panel.hidden = true; panel.innerHTML = '';
+    document.body.classList.remove('has-fav');
+    return;
+  }
+
+  panel.innerHTML = '';
+  panel.append(el('div', { class: 'favpanel__head' }, 'Favorites'));
+  const grid = el('div', { class: 'favgrid' });
+
+  for (const site of sites) {
+    const tile = el('a', {
+      class: 'favtile',
+      href: site.url,
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      title: site.name,
+    },
+      el('span', { class: 'favtile__icon' }, faviconNode(site)),
+      el('span', { class: 'favtile__name' }, el('span', {}, site.name)),
+    );
+    tile.dataset.id = site.id;
+    attachFavDrag(tile, site, grid);
+    grid.append(tile);
+  }
+  panel.append(grid);
+  panel.hidden = false;
+  document.body.classList.add('has-fav');
+
+  // After layout, mark names that overflow their tile so only those marquee,
+  // and set the exact scroll distance. Add the class first (it unclamps the
+  // span) so scrollWidth reflects the full text width, then measure.
+  requestAnimationFrame(() => {
+    grid.querySelectorAll('.favtile__name').forEach((nameEl) => {
+      const inner = nameEl.firstChild;
+      if (!inner) return;
+      const visible = nameEl.clientWidth;
+      nameEl.classList.add('favtile__name--marquee');
+      const full = inner.scrollWidth;
+      if (full > visible + 1) {
+        nameEl.style.setProperty('--marquee-dist', '-' + (full - visible) + 'px');
+      } else {
+        nameEl.classList.remove('favtile__name--marquee');
+      }
+    });
+  });
+}
+
+// Move dragged favorite to the position of the target, persist new order.
+// Persist a new favorites order (called after a pointer-drag completes).
+async function persistFavOrder(order) {
+  state.user.favorites = order;
+  try {
+    const d = await api('/auth/favorites/order', { method: 'PATCH', body: { order } });
+    state.user.favorites = d.favorites || order;
+  } catch (e) { toast(e.message, true); }
+}
+
 // ---------- rendering results ----------
 // Move the logo + search bar row into the top bar while searching (so they
 // sit on one line where the brand used to be, like Google's results header),
@@ -181,6 +401,40 @@ function renderResults() {
 
     result.append(head, title, desc, meta);
 
+    // Per-listing controls: favorite star + 3-dot menu (top-right).
+    if (state.user) {
+      const controls = el('div', { class: 'result__controls' });
+
+      const isFav = isFavorite(site.id);
+      const starBtn = el('button', {
+        class: 'result__star' + (isFav ? ' result__star--on' : ''),
+        title: isFav ? 'Remove from favorites' : 'Add to favorites',
+        'aria-label': 'Toggle favorite',
+        onclick: (e) => { e.stopPropagation(); toggleFavorite(site.id); },
+      }, el('span', { html: starSvg(isFav) }));
+      controls.append(starBtn);
+
+      // The 3-dot menu only appears if the user can edit/delete this listing.
+      if (canManage(site)) {
+        const menuWrap = el('div', { class: 'result__menu' });
+        const dotsBtn = el('button', {
+          class: 'result__dots',
+          title: 'More actions',
+          'aria-label': 'More actions',
+          'aria-haspopup': 'true',
+          onclick: (e) => { e.stopPropagation(); toggleResultMenu(menuWrap); },
+        }, el('span', { html: '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="5" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="19" r="1.6" fill="currentColor"/></svg>' }));
+        const dropdown = el('div', { class: 'result__menudrop', hidden: true },
+          el('button', { class: 'result__menuitem', onclick: () => { closeAllResultMenus(); openSiteModal(site); } }, 'Edit'),
+          el('button', { class: 'result__menuitem result__menuitem--danger', onclick: () => { closeAllResultMenus(); deleteSite(site); } }, 'Delete'),
+        );
+        menuWrap.append(dotsBtn, dropdown);
+        controls.append(menuWrap);
+      }
+
+      result.append(controls);
+    }
+
     if (site.tags && site.tags.length) {
       const tagWrap = el('div', { class: 'result__tags' });
       for (const tag of site.tags) {
@@ -190,15 +444,6 @@ function renderResults() {
         }, '#' + tag));
       }
       result.append(tagWrap);
-    }
-
-    if (canManage(site)) {
-      result.append(
-        el('div', { class: 'result__actions' },
-          el('button', { class: 'minibtn', onclick: () => openSiteModal(site) }, 'Edit'),
-          el('button', { class: 'minibtn minibtn--danger', onclick: () => deleteSite(site) }, 'Delete'),
-        )
-      );
     }
 
     box.append(result);
@@ -389,6 +634,7 @@ async function loadSites() {
     renderResults();
     updateFilterButton();
     loadRssPanel();
+    renderFavorites();
     window.scrollTo({ top: 0, behavior: 'auto' });
   } catch (e) {
     toast(e.message, true);
@@ -1434,6 +1680,14 @@ function formatRssDate(d) {
 }
 
 // ---------- wire up ----------
+// Lock page scrolling while a mobile drawer (RSS or favorites) is open, so
+// touch-scrolling stays inside the drawer instead of moving the page behind it.
+function syncDrawerScrollLock() {
+  const open = $('#rssPanel').classList.contains('rsspanel--open') ||
+               $('#favPanel').classList.contains('favpanel--open');
+  document.body.classList.toggle('drawer-open', open);
+}
+
 function init() {
   const input = $('#searchInput');
 
@@ -1505,7 +1759,24 @@ function init() {
     // so the desktop docked panel keeps its own top from the stylesheet.
     const topbar = $('#topbar');
     if (topbar) panel.style.setProperty('--banner-h', topbar.getBoundingClientRect().height + 'px');
-    panel.classList.toggle('rsspanel--open');
+    const willOpen = !panel.classList.contains('rsspanel--open');
+    $('#favPanel').classList.remove('favpanel--open'); // close the other drawer
+    panel.classList.toggle('rsspanel--open', willOpen);
+    syncDrawerScrollLock();
+  });
+  // Favorites drawer toggle (small screens).
+  $('#favToggleBtn').addEventListener('click', () => {
+    const panel = $('#favPanel');
+    const topbar = $('#topbar');
+    if (topbar) panel.style.setProperty('--banner-h', topbar.getBoundingClientRect().height + 'px');
+    const willOpen = !panel.classList.contains('favpanel--open');
+    $('#rssPanel').classList.remove('rsspanel--open'); // close the other drawer
+    panel.classList.toggle('favpanel--open', willOpen);
+    syncDrawerScrollLock();
+  });
+  // Close result 3-dot menus when clicking elsewhere.
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.result__menu')) closeAllResultMenus();
   });
   $('#adminBtn').addEventListener('click', () => {
     $('#userMenuDropdown').hidden = true;
