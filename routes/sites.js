@@ -138,6 +138,42 @@ router.get('/tags', async (req, res) => {
   res.json({ tags });
 });
 
+// Autocomplete suggestions for the search box. Returns up to 5 suggestions
+// drawn from listing names, tags, and notable words, ranked by relevance to
+// the typed prefix. Public (search is open to everyone).
+router.get('/suggest', async (req, res) => {
+  const q = clampStr(req.query.q, 100).toLowerCase().trim();
+  if (!q) return res.json({ suggestions: [] });
+  const sites = await db.getSites();
+
+  // Score candidates: a name/tag that starts with the query ranks above one
+  // that merely contains it. De-duplicate case-insensitively.
+  const seen = new Set();
+  const scored = [];
+  function consider(text, type, weight) {
+    if (!text) return;
+    const low = text.toLowerCase();
+    const idx = low.indexOf(q);
+    if (idx === -1) return;
+    const key = type + ':' + low;
+    if (seen.has(key)) return;
+    seen.add(key);
+    // Lower score = better. Prefix match (idx 0) beats mid-string; shorter
+    // text beats longer; names rank above tags by the weight.
+    const score = (idx === 0 ? 0 : 100) + idx + text.length * 0.1 + weight;
+    scored.push({ value: text, type, score });
+  }
+
+  for (const s of sites) {
+    consider(s.name, 'name', 0);
+    for (const t of s.tags || []) consider(t, 'tag', 50);
+  }
+
+  scored.sort((a, b) => a.score - b.score);
+  const suggestions = scored.slice(0, 5).map(({ value, type }) => ({ value, type }));
+  res.json({ suggestions });
+});
+
 // Add a new site. Any signed-in user.
 router.post('/', requireAuth, handleIcon, async (req, res) => {
   const name = clampStr(req.body.name, 120);
