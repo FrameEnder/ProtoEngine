@@ -174,6 +174,17 @@ router.get('/suggest', async (req, res) => {
   res.json({ suggestions });
 });
 
+// Resolve a comma-separated list of site IDs to site objects, preserving the
+// requested order. Used by the favorites grid.
+router.get('/by-ids', async (req, res) => {
+  const ids = clampStr(req.query.ids, 2000).split(',').map((s) => s.trim()).filter(Boolean);
+  if (!ids.length) return res.json({ sites: [] });
+  const all = await db.getSites();
+  const byId = new Map(all.map((s) => [s.id, s]));
+  const sites = ids.map((id) => byId.get(id)).filter(Boolean);
+  res.json({ sites });
+});
+
 // Add a new site. Any signed-in user.
 router.post('/', requireAuth, handleIcon, async (req, res) => {
   const name = clampStr(req.body.name, 120);
