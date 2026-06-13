@@ -1,16 +1,16 @@
 # Works with `podman-compose up -d` or `docker compose up -d`.
 services:
-  lumen:
+  protoengine:
     build: .
-    container_name: lumen-search
+    container_name: proto-engine
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
       NODE_ENV: production
       PORT: "3000"
-      # Brand name shown across the UI. Defaults to "Lumen" if unset.
-      APP_NAME: "${APP_NAME:-Lumen}"
+      # Brand name shown across the UI. Defaults to "ProtoEngine" if unset.
+      APP_NAME: "${APP_NAME}"
       # Set to "true" ONLY when serving over HTTPS (e.g. behind a reverse
       # proxy). Over plain http:// it must stay false or logins won't persist.
       SECURE_COOKIES: "${SECURE_COOKIES:-false}"
