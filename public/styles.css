@@ -1079,6 +1079,58 @@ body.has-bg .favtile { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
   .settings__content { max-width: none; }
 }
 
+/* ---------- Collapsible settings sections (RSS) ---------- */
+.collapse { border: 1px solid var(--border); border-radius: 10px; margin-bottom: 12px; overflow: hidden; }
+.collapse__head {
+  width: 100%; display: flex; align-items: center; gap: 8px;
+  padding: 12px 14px; background: var(--surface); border: none; color: var(--text);
+  font-size: 14px; font-weight: 600; cursor: pointer; text-align: left;
+}
+.collapse__head:hover { background: var(--surface-hover); }
+.collapse__caret { display: grid; place-items: center; transition: transform 0.18s; color: var(--text-dim); }
+.collapse--open .collapse__caret { transform: rotate(90deg); }
+.collapse__body { display: none; padding: 14px; }
+.collapse--open .collapse__body { display: block; }
+.rssgroup__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.rsschip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 6px 4px 10px; border-radius: 999px;
+  background: var(--surface-hover); border: 1px solid var(--border);
+  font-size: 12px; max-width: 100%;
+}
+.rsschip__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+.rsschip__x {
+  display: grid; place-items: center; width: 16px; height: 16px;
+  border: none; border-radius: 50%; background: var(--border); color: var(--text);
+  font-size: 12px; line-height: 1; cursor: pointer; padding: 0; flex: none;
+}
+.rsschip__x:hover { background: var(--red); color: #fff; }
+.rssgroup__add { width: 100%; margin-top: 8px; }
+
+/* ---------- RSS panel group dropdown ---------- */
+.rsspanel__groupwrap { position: relative; }
+.rsspanel__group {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--text); font-size: 13px; font-weight: 700;
+  letter-spacing: 0.03em; text-transform: uppercase;
+}
+.rsspanel__group:hover { color: var(--blue); }
+.rsspanel__caret { display: grid; place-items: center; color: var(--text-dim); }
+.rsspanel__menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 20;
+  min-width: 180px; max-height: 320px; overflow-y: auto;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 4px; box-shadow: 0 10px 30px rgba(0,0,0,0.45);
+}
+.rsspanel__menuitem {
+  display: block; width: 100%; text-align: left;
+  padding: 8px 10px; border: none; border-radius: 7px; background: none;
+  color: var(--text); font-size: 13px; cursor: pointer;
+}
+.rsspanel__menuitem:hover { background: var(--surface-hover); }
+.rsspanel__menuitem--active { color: var(--blue); font-weight: 600; }
+
 /* ---------- Branding preview (admin) ---------- */
 .brand-preview {
   margin-top: 10px;
