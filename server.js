@@ -8,6 +8,7 @@ import { doubleCsrf } from 'csrf-csrf';
 import FileStoreFactory from 'session-file-store';
 import path from 'path';
 import fs from 'fs';
+import { settings, HERO_ANIMATIONS } from './data-store.js';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 
@@ -27,47 +28,22 @@ const PORT = process.env.PORT || 3000;
 // typically via a reverse proxy. Defaults off so http access works.
 const SECURE_COOKIES = process.env.SECURE_COOKIES === 'true';
 
-// Brand name shown throughout the UI. Set APP_NAME in .env to rebrand;
-// defaults to "Lumen". Clamp length and strip characters that could break
-// HTML injection, since this value is interpolated into the page.
-const APP_NAME = (process.env.APP_NAME || 'Lumen')
-  .replace(/[<>&"'`]/g, '')
-  .trim()
-  .slice(0, 40) || 'Lumen';
-
-// Taglines shown under the search box. Stored in data/tagline.json as a JSON
-// array of strings, e.g. ["First tagline.", "Second tagline."]. One is shown
-// at random per page load. Edit the file any time — it's read fresh on each
-// request, so no restart is needed. Created with a default if missing.
+// ---- Branding & site settings (admin-editable, persisted) ----
+// Logic lives in data-store.js (settings store). We migrate a legacy
+// data/tagline.json into settings.json on first run, then read fresh per
+// request so admin edits apply without a restart.
+const SETTINGS_FILE = path.join(__dirname, 'data', 'settings.json');
 const TAGLINE_FILE = path.join(__dirname, 'data', 'tagline.json');
-const DEFAULT_TAGLINES = ['Search the sites your people actually use.'];
-
-function ensureTaglineFile() {
+(function migrate() {
+  if (fs.existsSync(SETTINGS_FILE)) return;
+  let taglines;
   try {
-    if (!fs.existsSync(TAGLINE_FILE)) {
-      fs.mkdirSync(path.dirname(TAGLINE_FILE), { recursive: true });
-      fs.writeFileSync(TAGLINE_FILE, JSON.stringify(DEFAULT_TAGLINES, null, 2));
-    }
-  } catch {
-    /* non-fatal: we fall back to defaults at read time */
-  }
-}
-ensureTaglineFile();
+    if (fs.existsSync(TAGLINE_FILE)) taglines = JSON.parse(fs.readFileSync(TAGLINE_FILE, 'utf8'));
+  } catch { /* ignore */ }
+  settings.write(taglines ? { taglines } : {});
+})();
 
-// Read, validate, and sanitize taglines. Always returns a non-empty array.
-function loadTaglines() {
-  try {
-    const raw = fs.readFileSync(TAGLINE_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    const list = (Array.isArray(parsed) ? parsed : [parsed])
-      .filter((t) => typeof t === 'string')
-      .map((t) => t.trim().slice(0, 200))
-      .filter(Boolean);
-    return list.length ? list : DEFAULT_TAGLINES;
-  } catch {
-    return DEFAULT_TAGLINES;
-  }
-}
+function loadTaglines() { return settings.read().taglines; }
 
 // Secrets: read from env, or generate ephemeral ones (with a warning).
 const SESSION_SECRET = process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex');
@@ -187,9 +163,10 @@ app.get('/api/csrf', (req, res) => {
   res.json({ token: generateToken(req, res) });
 });
 
-// Public config the frontend reads on load (brand name, etc.).
+// Public config the frontend reads on load (brand name, taglines, animation).
 app.get('/api/config', (req, res) => {
-  res.json({ appName: APP_NAME, taglines: loadTaglines() });
+  const s = settings.read();
+  res.json({ appName: s.appName, taglines: s.taglines, heroAnimation: s.heroAnimation, heroAnimations: HERO_ANIMATIONS });
 });
 
 app.use(loadUser);
@@ -233,7 +210,10 @@ const INDEX_PATH = path.join(__dirname, 'public', 'index.html');
 function sendIndex(req, res) {
   fs.readFile(INDEX_PATH, 'utf8', (err, html) => {
     if (err) return res.status(500).send('Could not load the page.');
-    res.type('html').send(html.replaceAll('{{APP_NAME}}', APP_NAME));
+    const s = settings.read();
+    res.type('html').send(
+      html.replaceAll('{{APP_NAME}}', s.appName).replaceAll('{{TAB_TITLE}}', s.tabTitle)
+    );
   });
 }
 app.get('/', sendIndex);
@@ -241,6 +221,7 @@ app.get('/index.html', sendIndex);
 // /search is a client-side route; serve the same SPA shell so direct loads,
 // refreshes, and shared links like /search?q=foo&p=2 work.
 app.get('/search', sendIndex);
+app.get('/settings', sendIndex);
 
 // Static frontend + uploaded icons.
 app.use(express.static(path.join(__dirname, 'public')));
@@ -255,6 +236,6 @@ app.use((err, req, res, next) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`\x1b[36m${APP_NAME} running at http://localhost:${PORT}\x1b[0m`);
+  console.log(`\x1b[36m${settings.read().appName} running at http://localhost:${PORT}\x1b[0m`);
   console.log('The first account you register becomes the admin.');
 });
