@@ -194,7 +194,7 @@ body.searching .topbar__brand { display: none; }
 }
 .hero__word span {
   display: inline-block;
-  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: var(--hero-anim, rise) 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   animation-delay: calc(var(--i) * 60ms);
 }
 /* Colors cycle every 5 letters so any-length brand name keeps the palette. */
@@ -203,10 +203,39 @@ body.searching .topbar__brand { display: none; }
 .hero__word span:nth-child(5n + 3) { color: var(--amber); }
 .hero__word span:nth-child(5n + 4) { color: var(--blue); }
 .hero__word span:nth-child(5n + 5) { color: var(--green); }
-@keyframes rise {
-  from { opacity: 0; transform: translateY(18px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+
+/* Selectable hero entrance animations (chosen in admin → Branding). */
+.hero--anim-rise span        { --hero-anim: rise; }
+.hero--anim-fade-in span     { --hero-anim: h-fade; }
+.hero--anim-pop span         { --hero-anim: h-pop; }
+.hero--anim-flip span        { --hero-anim: h-flip; }
+.hero--anim-wave span        { --hero-anim: h-wave; }
+.hero--anim-drop span        { --hero-anim: h-drop; }
+.hero--anim-zoom span        { --hero-anim: h-zoom; }
+.hero--anim-blur-in span     { --hero-anim: h-blur; }
+.hero--anim-slide-left span  { --hero-anim: h-slide; }
+.hero--anim-swing span       { --hero-anim: h-swing; transform-origin: top center; }
+.hero--anim-bounce span      { --hero-anim: h-bounce; }
+.hero--anim-glow span        { --hero-anim: h-glow; }
+.hero--anim-typewriter span  { --hero-anim: h-type; }
+.hero--anim-spin-in span     { --hero-anim: h-spin; }
+.hero--anim-rubber span      { --hero-anim: h-rubber; }
+
+@keyframes rise   { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes h-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes h-pop  { 0% { opacity: 0; transform: scale(0.4); } 70% { transform: scale(1.12); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes h-flip { from { opacity: 0; transform: rotateX(-90deg); } to { opacity: 1; transform: rotateX(0); } }
+@keyframes h-wave { 0% { opacity: 0; transform: translateY(20px); } 60% { transform: translateY(-8px); } 100% { opacity: 1; transform: translateY(0); } }
+@keyframes h-drop { 0% { opacity: 0; transform: translateY(-26px); } 70% { transform: translateY(4px); } 100% { opacity: 1; transform: translateY(0); } }
+@keyframes h-zoom { from { opacity: 0; transform: scale(2.2); } to { opacity: 1; transform: scale(1); } }
+@keyframes h-blur { from { opacity: 0; filter: blur(10px); } to { opacity: 1; filter: blur(0); } }
+@keyframes h-slide { from { opacity: 0; transform: translateX(-26px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes h-swing { 0% { opacity: 0; transform: rotate(-14deg); } 60% { transform: rotate(8deg); } 100% { opacity: 1; transform: rotate(0); } }
+@keyframes h-bounce { 0% { opacity: 0; transform: translateY(-30px); } 55% { transform: translateY(0); } 70% { transform: translateY(-10px); } 85% { transform: translateY(0); } 100% { opacity: 1; transform: translateY(0); } }
+@keyframes h-glow { 0% { opacity: 0; text-shadow: 0 0 18px currentColor; } 100% { opacity: 1; text-shadow: 0 2px 12px rgba(0,0,0,0.45); } }
+@keyframes h-type { from { opacity: 0; transform: scaleX(0); transform-origin: left; } to { opacity: 1; transform: scaleX(1); } }
+@keyframes h-spin { from { opacity: 0; transform: rotate(-180deg) scale(0.5); } to { opacity: 1; transform: rotate(0) scale(1); } }
+@keyframes h-rubber { 0% { opacity: 0; transform: scale(0.6,1.4); } 50% { transform: scale(1.25,0.75); } 70% { transform: scale(0.9,1.1); } 100% { opacity: 1; transform: scale(1,1); } }
 .hero__tag {
   color: var(--text-dim);
   font-size: 16px;
@@ -846,12 +875,30 @@ body.has-bg .rsscard { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
   font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
   text-transform: uppercase; color: var(--text-faint);
   padding: 2px 4px 10px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
+.favpanel__actions { display: flex; align-items: center; gap: 2px; }
+.favpanel__btn {
+  display: grid; place-items: center; width: 26px; height: 26px;
+  border-radius: 7px; border: none; background: none; color: var(--text-faint);
+  cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.favpanel__btn:hover { background: var(--surface-hover); color: var(--text); }
+.favpanel__btn--active { color: var(--blue); }
+.favpanel__btn svg { display: block; }
 .favgrid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 10px;
 }
+/* List view: full-width rows with icon + name side by side. */
+.favgrid--list { grid-template-columns: 1fr; gap: 8px; }
+.favgrid--list .favtile {
+  flex-direction: row; aspect-ratio: auto; justify-content: flex-start;
+  gap: 10px; padding: 8px 12px;
+}
+.favgrid--list .favtile__name { text-align: left; flex: 1; }
+.favgrid--list .favtile__name span { max-width: 100%; }
 .favtile {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
   aspect-ratio: 1 / 1;          /* fixed square */
@@ -910,6 +957,31 @@ body.has-bg .rsscard { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
 
 body.has-bg .favtile { background: rgba(27,29,34,0.55); backdrop-filter: blur(12px); border-color: rgba(255,255,255,0.08); }
 
+/* Edit mode: tiles wobble and show a red delete badge (like phone home-screen). */
+.favgrid--editing { padding: 6px; } /* room so corner badges aren't clipped by the panel */
+.favgrid--editing .favtile {
+  cursor: default;
+  overflow: visible;             /* let the × badge sit outside the square */
+  animation: fav-wobble 0.4s ease-in-out infinite;
+}
+.favgrid--editing .favtile:nth-child(even) { animation-delay: 0.1s; }
+/* Keep the long-name clipping on the name itself, not the tile. */
+.favgrid--editing .favtile__name { overflow: hidden; }
+@keyframes fav-wobble {
+  0%, 100% { transform: rotate(-1.4deg); }
+  50% { transform: rotate(1.4deg); }
+}
+.favtile__del {
+  position: absolute; top: -8px; right: -8px; z-index: 3;
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 2px solid var(--bg); background: var(--red); color: #fff;
+  font-size: 14px; line-height: 1; cursor: pointer;
+  display: grid; place-items: center; padding: 0;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+}
+.favgrid--list .favtile__del { top: 50%; right: 8px; transform: translateY(-50%); }
+.favtile { position: relative; }
+
 /* Floating favorites toggle button (small screens). Sits above the RSS one. */
 .favtoggle-btn {
   display: none;
@@ -948,7 +1020,8 @@ body.has-bg .favtile { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
     box-shadow: 8px 0 30px rgba(0,0,0,0.5);
   }
   .favpanel.favpanel--open { transform: translateX(0); }
-  .favgrid { grid-template-columns: repeat(3, 1fr); }
+  .favgrid--grid { grid-template-columns: repeat(3, 1fr); }
+  .favgrid--list { grid-template-columns: 1fr; }
   body.has-fav:not(.searching) .stage { margin-left: 0; }
 }
 
@@ -956,6 +1029,70 @@ body.has-bg .favtile { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
    inside the drawer. Only matters at drawer widths (<=1199px). */
 @media (max-width: 1199px) {
   body.drawer-open { overflow: hidden; }
+}
+
+/* ---------- Full-page settings view ---------- */
+.settingspage {
+  position: fixed; inset: 0; z-index: 80;
+  background: var(--bg);
+  overflow-y: auto;
+  display: flex; flex-direction: column;
+}
+.settings__top {
+  display: flex; align-items: center; gap: 12px;
+  padding: 16px 22px; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; background: var(--bg); z-index: 2;
+}
+.settings__back {
+  display: grid; place-items: center; width: 36px; height: 36px;
+  border-radius: 9px; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); cursor: pointer; transition: background 0.15s;
+}
+.settings__back:hover { background: var(--surface-hover); }
+.settings__title { font-size: 20px; font-weight: 700; margin: 0; }
+.settings__body {
+  display: flex; gap: 28px; flex: 1;
+  max-width: 1000px; width: 100%; margin: 0 auto; padding: 26px 22px 60px;
+}
+.settings__rail {
+  flex: none; width: 200px;
+  display: flex; flex-direction: column; gap: 2px;
+  position: sticky; top: 90px; align-self: flex-start;
+}
+.settings__tab {
+  text-align: left; padding: 11px 14px; border-radius: 10px;
+  border: none; background: none; color: var(--text-dim);
+  font-size: 14px; font-weight: 500; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.settings__tab:hover { background: var(--surface-hover); color: var(--text); }
+.settings__tab--active { background: var(--surface); color: var(--text); font-weight: 600; }
+.settings__content { flex: 1; min-width: 0; max-width: 640px; }
+
+@media (max-width: 760px) {
+  .settings__body { flex-direction: column; gap: 18px; padding: 18px 16px 60px; }
+  .settings__rail {
+    width: auto; flex-direction: row; flex-wrap: wrap;
+    position: static; gap: 6px;
+  }
+  .settings__tab { padding: 8px 12px; border: 1px solid var(--border); }
+  .settings__content { max-width: none; }
+}
+
+/* ---------- Branding preview (admin) ---------- */
+.brand-preview {
+  margin-top: 10px;
+  display: grid; place-items: center;
+  min-height: 90px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  overflow: hidden;
+}
+.brand-preview__word {
+  font-size: clamp(28px, 6vw, 44px) !important;
+  margin: 0;
 }
 
 /* ---------- Avatar images ---------- */
