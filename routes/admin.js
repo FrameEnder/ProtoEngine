@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import multer from 'multer';
 import AdmZip from 'adm-zip';
-import { db, paths } from '../data-store.js';
+import { db, paths, settings, HERO_ANIMATIONS } from '../data-store.js';
 import { requireRole, ROLES, RANK } from '../middleware/auth.js';
 import { validUsername, validPassword } from '../util.js';
 
@@ -44,6 +44,22 @@ function publicUser(u) {
 async function revokeUserKey(id) {
   return db.updateUser(id, { apiKeyId: null, apiKeyHash: null, apiKeyCreatedAt: null });
 }
+
+// ---- Branding / site settings (admin only) ----
+router.get('/settings', async (req, res) => {
+  res.json({ settings: settings.read(), heroAnimations: HERO_ANIMATIONS });
+});
+
+router.patch('/settings', async (req, res) => {
+  const b = req.body || {};
+  const patch = {};
+  if (typeof b.appName === 'string') patch.appName = b.appName;
+  if (typeof b.tabTitle === 'string') patch.tabTitle = b.tabTitle;
+  if (Array.isArray(b.taglines)) patch.taglines = b.taglines;
+  if (typeof b.heroAnimation === 'string') patch.heroAnimation = b.heroAnimation;
+  const next = settings.write(patch);
+  res.json({ settings: next });
+});
 
 // List all users.
 router.get('/users', async (req, res) => {
@@ -154,10 +170,8 @@ router.get('/export', async (req, res) => {
     const sites = await db.getSites();
     zip.addFile('sites.json', Buffer.from(JSON.stringify(sites, null, 2)));
 
-    // Taglines, if present.
-    if (fs.existsSync(paths.TAGLINE_FILE)) {
-      zip.addLocalFile(paths.TAGLINE_FILE);
-    }
+    // Taglines, exported from the current settings.
+    zip.addFile('tagline.json', Buffer.from(JSON.stringify(settings.read().taglines, null, 2)));
 
     // Uploaded favicons. Stored under icons/ inside the zip.
     if (fs.existsSync(paths.ICONS_DIR)) {
@@ -172,7 +186,7 @@ router.get('/export', async (req, res) => {
     zip.addFile(
       'manifest.json',
       Buffer.from(JSON.stringify({
-        type: 'lumen-snapshot',
+        type: 'protoengine-snapshot',
         version: 1,
         createdAt: new Date().toISOString(),
         siteCount: sites.length,
@@ -180,7 +194,7 @@ router.get('/export', async (req, res) => {
     );
 
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-    const filename = `lumen-snapshot-${stamp}.zip`;
+    const filename = `protoengine-snapshot-${stamp}.zip`;
     const buffer = zip.toBuffer();
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -209,7 +223,7 @@ router.post('/import', handleZipUpload, async (req, res) => {
   // Require and parse sites.json.
   const sitesEntry = byName.get('sites.json');
   if (!sitesEntry) {
-    return res.status(400).json({ error: 'This zip has no sites.json — it is not a Lumen snapshot.' });
+    return res.status(400).json({ error: 'This zip has no sites.json — it is not a valid snapshot.' });
   }
   let importedSites;
   try {
@@ -294,7 +308,7 @@ router.post('/import', handleZipUpload, async (req, res) => {
 
     // 3. Replace taglines if the snapshot had them.
     if (importedTaglines && importedTaglines.length) {
-      fs.writeFileSync(paths.TAGLINE_FILE, JSON.stringify(importedTaglines, null, 2));
+      settings.write({ taglines: importedTaglines });
     }
 
     res.json({ ok: true, siteCount: cleanSites.length, iconCount: iconsToWrite.length });
