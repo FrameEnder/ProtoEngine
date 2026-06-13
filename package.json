@@ -1,5 +1,5 @@
 {
-  "name": "lumen-search",
+  "name": "protoengine-search",
   "version": "1.0.0",
   "description": "A self-hostable search engine for local, group, and project websites.",
   "type": "module",
