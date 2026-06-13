@@ -10,9 +10,9 @@
 #     owns the mounted folders. Set PUID/PGID in .env to match your NAS user
 #     (run `id` over SSH to find them; the first UGOS admin is usually 1000).
 services:
-  lumen:
+  protoengine:
     build: .
-    container_name: lumen-search
+    container_name: proto-engine
     restart: unless-stopped
     # Run the app as your NAS user so the bind-mounted data folders are
     # writable. Defaults to 1000:1000 if PUID/PGID aren't set.
@@ -22,7 +22,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
-      APP_NAME: "${APP_NAME:-Lumen}"
+      APP_NAME: "${APP_NAME}"
       # Keep false unless you front this with HTTPS (reverse proxy).
       SECURE_COOKIES: "${SECURE_COOKIES:-false}"
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
