@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="dark" />
-  <title>{{APP_NAME}} — find your group's corner of the web</title>
+  <title>{{TAB_TITLE}}</title>
   <!-- Critical inline style: applied during initial HTML parse, before
        styles.css loads, so the page never flashes white on reload. -->
   <style>
@@ -33,8 +33,7 @@
           <div class="usermenu__name" id="menuName"></div>
           <div class="usermenu__role" id="menuRole"></div>
         </div>
-        <button class="usermenu__item" id="accountBtn" role="menuitem">Account settings</button>
-        <button class="usermenu__item" id="adminBtn" role="menuitem" hidden>Admin panel</button>
+        <button class="usermenu__item" id="accountBtn" role="menuitem">Settings</button>
         <button class="usermenu__item" id="logoutBtn" role="menuitem">Sign out</button>
       </div>
     </div>
@@ -85,6 +84,9 @@
 
   <!-- Modal root -->
   <div class="modal-root" id="modalRoot" hidden></div>
+
+  <!-- Full-page settings view -->
+  <div class="settingspage" id="settingsPage" hidden></div>
 
   <script src="/app.js" defer></script>
 </body>
