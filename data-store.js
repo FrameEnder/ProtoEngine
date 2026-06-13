@@ -134,5 +134,53 @@ export const paths = {
   DATA_DIR,
   SITES_FILE,
   TAGLINE_FILE: path.join(DATA_DIR, 'tagline.json'),
+  SETTINGS_FILE: path.join(DATA_DIR, 'settings.json'),
   ICONS_DIR: path.join(__dirname, 'public', 'icons'),
+};
+
+// ---- Branding & site settings (admin-editable) ----
+export const HERO_ANIMATIONS = [
+  'rise', 'fade-in', 'pop', 'flip', 'wave', 'drop', 'zoom', 'blur-in',
+  'slide-left', 'swing', 'bounce', 'glow', 'typewriter', 'spin-in', 'rubber',
+];
+const DEFAULT_TAGLINES = ['Search the sites your people actually use.'];
+const ENV_APP_NAME = (process.env.APP_NAME || 'ProtoEngine')
+  .replace(/[<>&"'`]/g, '').trim().slice(0, 40) || 'ProtoEngine';
+
+function sanitizeName(s, fallback) {
+  const out = String(s || '').replace(/[<>&"'`]/g, '').trim().slice(0, 40);
+  return out || fallback;
+}
+function sanitizeTaglines(arr) {
+  const list = (Array.isArray(arr) ? arr : [])
+    .filter((t) => typeof t === 'string')
+    .map((t) => t.trim().slice(0, 200))
+    .filter(Boolean);
+  return list.length ? list : DEFAULT_TAGLINES.slice();
+}
+
+export const settings = {
+  read() {
+    let s = {};
+    try { s = JSON.parse(fs.readFileSync(paths.SETTINGS_FILE, 'utf8')); } catch { s = {}; }
+    const appName = sanitizeName(s.appName, ENV_APP_NAME);
+    return {
+      appName,
+      tabTitle: sanitizeName(s.tabTitle, appName),
+      taglines: sanitizeTaglines(s.taglines),
+      heroAnimation: (s.heroAnimation === 'random' || HERO_ANIMATIONS.includes(s.heroAnimation)) ? s.heroAnimation : 'random',
+    };
+  },
+  write(patch) {
+    const next = { ...this.read(), ...patch };
+    next.appName = sanitizeName(next.appName, ENV_APP_NAME);
+    next.tabTitle = sanitizeName(next.tabTitle, next.appName);
+    next.taglines = sanitizeTaglines(next.taglines);
+    if (next.heroAnimation !== 'random' && !HERO_ANIMATIONS.includes(next.heroAnimation)) next.heroAnimation = 'random';
+    try {
+      fs.mkdirSync(paths.DATA_DIR, { recursive: true });
+      fs.writeFileSync(paths.SETTINGS_FILE, JSON.stringify(next, null, 2));
+    } catch { /* non-fatal */ }
+    return next;
+  },
 };
