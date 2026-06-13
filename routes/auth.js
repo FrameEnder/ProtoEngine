@@ -67,6 +67,7 @@ router.get('/me', async (req, res) => {
       avatar: u.avatar || null,
       background: u.background || null,
       favorites: Array.isArray(u.favorites) ? u.favorites : [],
+      favoritesView: u.favoritesView === 'list' ? 'list' : 'grid',
       hasApiKey: !!u.apiKeyHash,
     },
   });
@@ -218,6 +219,15 @@ router.delete('/background', requireAuth, async (req, res) => {
   }
   await db.updateUser(me.id, { background: null });
   res.json({ ok: true });
+});
+
+// Set the favorites view orientation (grid or list). Remembered per user.
+router.patch('/favorites/view', requireAuth, async (req, res) => {
+  const me = await db.getUserById(req.user.id);
+  if (!me) return res.status(404).json({ error: 'Account not found.' });
+  const view = (req.body && req.body.view) === 'list' ? 'list' : 'grid';
+  await db.updateUser(me.id, { favoritesView: view });
+  res.json({ view });
 });
 
 // ---- Favorites (per-user, ordered list of site IDs) ----
