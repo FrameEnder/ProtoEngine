@@ -171,25 +171,37 @@ async function fetchFeed(url) {
 
 // ---- Feed management (per user) ----
 
-// List the current user's configured feeds plus the refresh interval.
+// List the current user's feeds, groups, refresh interval, and active group.
 router.get('/feeds', requireAuth, async (req, res) => {
   const u = await db.getUserById(req.user.id);
   if (!u) return res.status(404).json({ error: 'Account not found.' });
   res.json({
     feeds: u.rssFeeds || [],
+    groups: u.rssGroups || [],
+    activeGroup: typeof u.rssActiveGroup === 'string' ? u.rssActiveGroup : '',
     refreshMinutes: Number.isFinite(u.rssRefreshMinutes) ? u.rssRefreshMinutes : 5,
   });
 });
 
-// Update RSS settings (currently just the refresh interval, in minutes).
+// Update RSS settings: refresh interval and/or the remembered active group.
 router.patch('/settings', requireAuth, async (req, res) => {
   const u = await db.getUserById(req.user.id);
   if (!u) return res.status(404).json({ error: 'Account not found.' });
-  let m = parseInt((req.body && req.body.refreshMinutes), 10);
-  if (!Number.isInteger(m) || m < 1) return res.status(400).json({ error: 'Refresh must be at least 1 minute.' });
-  if (m > 1440) m = 1440; // cap at 24h
-  await db.updateUser(u.id, { rssRefreshMinutes: m });
-  res.json({ refreshMinutes: m });
+  const patch = {};
+  const b = req.body || {};
+  if (b.refreshMinutes !== undefined) {
+    let m = parseInt(b.refreshMinutes, 10);
+    if (!Number.isInteger(m) || m < 1) return res.status(400).json({ error: 'Refresh must be at least 1 minute.' });
+    if (m > 1440) m = 1440;
+    patch.rssRefreshMinutes = m;
+  }
+  if (typeof b.activeGroup === 'string') {
+    // '' means "All Feeds"; otherwise must be a real group id.
+    const groups = u.rssGroups || [];
+    patch.rssActiveGroup = (b.activeGroup === '' || groups.some((g) => g.id === b.activeGroup)) ? b.activeGroup : '';
+  }
+  const next = await db.updateUser(u.id, patch);
+  res.json({ refreshMinutes: next.rssRefreshMinutes ?? 5, activeGroup: next.rssActiveGroup ?? '' });
 });
 
 // Add a feed.
@@ -203,7 +215,6 @@ router.post('/feeds', requireAuth, async (req, res) => {
   if (feeds.length >= 30) return res.status(400).json({ error: 'Feed limit reached (30).' });
   if (feeds.some((f) => f.url === url)) return res.status(409).json({ error: 'That feed is already added.' });
 
-  // Validate by fetching it once; store the discovered title.
   let title = '';
   try {
     const data = await fetchFeed(url);
@@ -213,57 +224,113 @@ router.post('/feeds', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Could not read that as an RSS or Atom feed.' });
   }
 
-  const feed = { id: uid(), url, title, enabled: true, onMain: true, onSearch: false };
+  const feed = { id: uid(), url, title, enabled: true };
   feeds.push(feed);
   await db.updateUser(u.id, { rssFeeds: feeds });
   res.json({ feed });
 });
 
-// Update a feed's toggles.
+// Update a feed (enabled toggle only now; groups are managed separately).
 router.patch('/feeds/:id', requireAuth, async (req, res) => {
   const u = await db.getUserById(req.user.id);
   if (!u) return res.status(404).json({ error: 'Account not found.' });
   const feeds = u.rssFeeds || [];
   const f = feeds.find((x) => x.id === req.params.id);
   if (!f) return res.status(404).json({ error: 'Feed not found.' });
-
   const b = req.body || {};
   if (typeof b.enabled === 'boolean') f.enabled = b.enabled;
-  if (typeof b.onMain === 'boolean') f.onMain = b.onMain;
-  if (typeof b.onSearch === 'boolean') f.onSearch = b.onSearch;
   await db.updateUser(u.id, { rssFeeds: feeds });
   res.json({ feed: f });
 });
 
-// Delete a feed.
+// Delete a feed (and remove it from any groups).
 router.delete('/feeds/:id', requireAuth, async (req, res) => {
   const u = await db.getUserById(req.user.id);
   if (!u) return res.status(404).json({ error: 'Account not found.' });
-  const feeds = (u.rssFeeds || []).filter((x) => x.id !== req.params.id);
-  await db.updateUser(u.id, { rssFeeds: feeds });
+  const id = req.params.id;
+  const feeds = (u.rssFeeds || []).filter((x) => x.id !== id);
+  const groups = (u.rssGroups || []).map((g) => ({ ...g, feedIds: (g.feedIds || []).filter((fid) => fid !== id) }));
+  await db.updateUser(u.id, { rssFeeds: feeds, rssGroups: groups });
   res.json({ ok: true });
 });
 
+// ---- Groups ----
+
+// Create a group.
+router.post('/groups', requireAuth, async (req, res) => {
+  const u = await db.getUserById(req.user.id);
+  if (!u) return res.status(404).json({ error: 'Account not found.' });
+  const name = clampStr((req.body && req.body.name) || '', 60).trim();
+  if (!name) return res.status(400).json({ error: 'Enter a group name.' });
+  const groups = u.rssGroups || [];
+  if (groups.length >= 30) return res.status(400).json({ error: 'Group limit reached (30).' });
+  const group = { id: uid(), name, feedIds: [] };
+  groups.push(group);
+  await db.updateUser(u.id, { rssGroups: groups });
+  res.json({ group });
+});
+
+// Rename a group.
+router.patch('/groups/:id', requireAuth, async (req, res) => {
+  const u = await db.getUserById(req.user.id);
+  if (!u) return res.status(404).json({ error: 'Account not found.' });
+  const groups = u.rssGroups || [];
+  const g = groups.find((x) => x.id === req.params.id);
+  if (!g) return res.status(404).json({ error: 'Group not found.' });
+  const name = clampStr((req.body && req.body.name) || '', 60).trim();
+  if (name) g.name = name;
+  await db.updateUser(u.id, { rssGroups: groups });
+  res.json({ group: g });
+});
+
+// Delete a group (feeds themselves are untouched).
+router.delete('/groups/:id', requireAuth, async (req, res) => {
+  const u = await db.getUserById(req.user.id);
+  if (!u) return res.status(404).json({ error: 'Account not found.' });
+  const groups = (u.rssGroups || []).filter((x) => x.id !== req.params.id);
+  const patch = { rssGroups: groups };
+  if (u.rssActiveGroup === req.params.id) patch.rssActiveGroup = ''; // fall back to All Feeds
+  await db.updateUser(u.id, patch);
+  res.json({ ok: true });
+});
+
+// Toggle a feed's membership in a group.
+router.patch('/groups/:id/feeds', requireAuth, async (req, res) => {
+  const u = await db.getUserById(req.user.id);
+  if (!u) return res.status(404).json({ error: 'Account not found.' });
+  const groups = u.rssGroups || [];
+  const g = groups.find((x) => x.id === req.params.id);
+  if (!g) return res.status(404).json({ error: 'Group not found.' });
+  const b = req.body || {};
+  const feedId = clampStr(b.feedId || '', 40);
+  if (!feedId) return res.status(400).json({ error: 'A feed id is required.' });
+  g.feedIds = g.feedIds || [];
+  const i = g.feedIds.indexOf(feedId);
+  if (b.member === true && i === -1) g.feedIds.push(feedId);
+  else if (b.member === false && i !== -1) g.feedIds.splice(i, 1);
+  else if (b.member === undefined) { if (i === -1) g.feedIds.push(feedId); else g.feedIds.splice(i, 1); }
+  await db.updateUser(u.id, { rssGroups: groups });
+  res.json({ group: g });
+});
+
 // ---- Aggregated entries for display ----
-// Returns merged, date-sorted entries from the user's enabled feeds that are
-// flagged for the requested context (?context=main|search).
+// Returns merged, date-sorted entries from enabled feeds. Optional ?group=ID
+// limits to feeds in that group; omitted/empty means All Feeds (every enabled).
 router.get('/entries', requireAuth, async (req, res) => {
   const u = await db.getUserById(req.user.id);
   if (!u) return res.status(404).json({ error: 'Account not found.' });
-  const context = clampStr(req.query.context, 10);
-  const feeds = (u.rssFeeds || []).filter((f) => {
-    if (!f.enabled) return false;
-    if (context === 'main') return f.onMain;
-    if (context === 'search') return f.onSearch;
-    return f.onMain || f.onSearch;
-  });
+  const groupId = clampStr(req.query.group, 40);
+  let feeds = (u.rssFeeds || []).filter((f) => f.enabled);
+  if (groupId) {
+    const g = (u.rssGroups || []).find((x) => x.id === groupId);
+    const set = new Set(g ? (g.feedIds || []) : []);
+    feeds = feeds.filter((f) => set.has(f.id));
+  }
 
   const out = [];
   await Promise.all(feeds.map(async (f) => {
     try {
       const data = await fetchFeed(f.url);
-      // Favicon derived from the feed's own URL origin as a fallback, and
-      // per-entry from each item's link domain when available.
       for (const item of data.items.slice(0, 12)) {
         out.push({
           feedId: f.id,
