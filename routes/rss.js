@@ -155,7 +155,7 @@ async function fetchFeed(url) {
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { 'User-Agent': 'Lumen-RSS/1.0', Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml' },
+      headers: { 'User-Agent': 'ProtoEngine-RSS/1.0', Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml' },
       redirect: 'follow',
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
