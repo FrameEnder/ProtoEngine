@@ -1386,10 +1386,12 @@ async function renderRssTab(panel) {
   panel.append(el('div', { class: 'placeholder', style: 'padding:24px' }, 'Loading feeds…'));
 
   let feeds = [];
+  let groups = [];
   let refreshMinutes = state.rssRefreshMinutes || 5;
   try {
     const d = await api('/rss/feeds');
     feeds = d.feeds || [];
+    groups = d.groups || [];
     if (Number.isFinite(d.refreshMinutes)) refreshMinutes = d.refreshMinutes;
   } catch (e) {
     panel.innerHTML = '';
@@ -1399,83 +1401,192 @@ async function renderRssTab(panel) {
 
   panel.innerHTML = '';
 
-  // Add-feed row.
-  const urlInput = el('input', { type: 'text', placeholder: 'https://example.com/feed.xml' });
-  const addBtn = el('button', { class: 'btn btn--primary btn--small', type: 'button' }, 'Add');
-  const addMsg = el('div', { class: 'formmsg' });
-  async function addFeed() {
-    const url = urlInput.value.trim();
-    if (!url) return;
-    addBtn.disabled = true; addBtn.textContent = 'Checking…';
-    addMsg.textContent = '';
-    try {
-      const d = await api('/rss/feeds', { method: 'POST', body: { url } });
-      feeds.push(d.feed);
-      urlInput.value = '';
-      renderList();
-      toast('Feed added.');
-    } catch (e) {
-      addMsg.className = 'formmsg formmsg--error';
-      addMsg.textContent = e.message;
-    } finally {
-      addBtn.disabled = false; addBtn.textContent = 'Add';
-    }
+  // Small helper to build a collapsible section.
+  function collapsible(title, startOpen, build) {
+    const bodyWrap = el('div', { class: 'collapse__body' });
+    const caret = el('span', { class: 'collapse__caret', html: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' });
+    const head = el('button', { type: 'button', class: 'collapse__head' }, caret, el('span', {}, title));
+    const section = el('div', { class: 'collapse' + (startOpen ? ' collapse--open' : '') }, head, bodyWrap);
+    head.addEventListener('click', () => section.classList.toggle('collapse--open'));
+    build(bodyWrap);
+    return section;
   }
-  addBtn.addEventListener('click', addFeed);
-  urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addFeed(); });
 
-  const list = el('div', { class: 'rsslist' });
+  // ---------- Feeds section ----------
+  function buildFeeds(box) {
+    const urlInput = el('input', { type: 'text', placeholder: 'https://example.com/feed.xml' });
+    const addBtn = el('button', { class: 'btn btn--primary btn--small', type: 'button' }, 'Add');
+    const addMsg = el('div', { class: 'formmsg' });
+    const list = el('div', { class: 'rsslist' });
 
-  function toggleRow(feed, key, labelText) {
-    const input = el('input', { type: 'checkbox', ...(feed[key] ? { checked: 'checked' } : {}) });
-    input.addEventListener('change', async () => {
+    async function addFeed() {
+      const url = urlInput.value.trim();
+      if (!url) return;
+      addBtn.disabled = true; addBtn.textContent = 'Checking…'; addMsg.textContent = '';
       try {
-        await api('/rss/feeds/' + feed.id, { method: 'PATCH', body: { [key]: input.checked } });
-        feed[key] = input.checked;
-      } catch (e) { toast(e.message, true); input.checked = feed[key]; }
-    });
-    return el('label', { class: 'rsstoggle' }, input, el('span', {}, labelText));
+        const d = await api('/rss/feeds', { method: 'POST', body: { url } });
+        feeds.push(d.feed);
+        urlInput.value = '';
+        renderFeedList();
+        renderGroupList();   // group membership pickers need the new feed
+        toast('Feed added.');
+      } catch (e) {
+        addMsg.className = 'formmsg formmsg--error'; addMsg.textContent = e.message;
+      } finally { addBtn.disabled = false; addBtn.textContent = 'Add'; }
+    }
+    addBtn.addEventListener('click', addFeed);
+    urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addFeed(); });
+
+    function renderFeedList() {
+      list.innerHTML = '';
+      if (!feeds.length) {
+        list.append(el('div', { class: 'field__hint', style: 'padding:8px 0' }, 'No feeds yet. Add a feed URL above.'));
+        return;
+      }
+      for (const feed of feeds) {
+        const enabled = el('input', { type: 'checkbox', ...(feed.enabled ? { checked: 'checked' } : {}) });
+        enabled.addEventListener('change', async () => {
+          try { await api('/rss/feeds/' + feed.id, { method: 'PATCH', body: { enabled: enabled.checked } }); feed.enabled = enabled.checked; }
+          catch (e) { toast(e.message, true); enabled.checked = feed.enabled; }
+        });
+        const del = el('button', { class: 'minibtn minibtn--danger', type: 'button' }, 'Remove');
+        del.addEventListener('click', async () => {
+          if (!confirm('Remove this feed?')) return;
+          try {
+            await api('/rss/feeds/' + feed.id, { method: 'DELETE' });
+            feeds = feeds.filter((f) => f.id !== feed.id);
+            groups.forEach((g) => { g.feedIds = (g.feedIds || []).filter((id) => id !== feed.id); });
+            renderFeedList(); renderGroupList();
+          } catch (e) { toast(e.message, true); }
+        });
+        list.append(
+          el('div', { class: 'rssitem' },
+            el('div', { class: 'rssitem__head' },
+              el('div', { class: 'rssitem__title' }, feed.title || feed.url),
+              del),
+            el('div', { class: 'rssitem__url' }, feed.url),
+            el('div', { class: 'rssitem__toggles' },
+              el('label', { class: 'rsstoggle' }, enabled, el('span', {}, 'Enabled'))),
+          )
+        );
+      }
+    }
+    renderFeedList();
+    box.append(
+      el('div', { class: 'field__hint', style: 'margin-bottom:10px' },
+        'Add feed URLs. Use groups below to organize which feeds show together.'),
+      el('div', { class: 'rssadd' }, urlInput, addBtn),
+      addMsg,
+      list,
+    );
+    // Expose for cross-updates from the groups section.
+    renderRssTab._renderFeedList = renderFeedList;
   }
 
-  function renderList() {
-    list.innerHTML = '';
-    if (!feeds.length) {
-      list.append(el('div', { class: 'field__hint', style: 'padding:8px 0' }, 'No feeds yet. Add a feed URL above.'));
+  // ---------- Groups section ----------
+  const groupListEl = el('div', { class: 'rsslist' });
+  function renderGroupList() {
+    groupListEl.innerHTML = '';
+    if (!groups.length) {
+      groupListEl.append(el('div', { class: 'field__hint', style: 'padding:8px 0' }, 'No groups yet. Create one above, then add feeds to it.'));
       return;
     }
-    for (const feed of feeds) {
-      const del = el('button', { class: 'minibtn minibtn--danger', type: 'button' }, 'Remove');
+    for (const group of groups) {
+      const del = el('button', { class: 'minibtn minibtn--danger', type: 'button' }, 'Delete');
       del.addEventListener('click', async () => {
-        if (!confirm('Remove this feed?')) return;
+        if (!confirm(`Delete group "${group.name}"? (Feeds themselves are kept.)`)) return;
         try {
-          await api('/rss/feeds/' + feed.id, { method: 'DELETE' });
-          feeds = feeds.filter((f) => f.id !== feed.id);
-          renderList();
+          await api('/rss/groups/' + group.id, { method: 'DELETE' });
+          groups = groups.filter((g) => g.id !== group.id);
+          renderGroupList();
         } catch (e) { toast(e.message, true); }
       });
-      list.append(
+
+      group.feedIds = group.feedIds || [];
+
+      // Helper to flip membership and re-render this list.
+      async function setMember(feedId, member) {
+        try {
+          await api('/rss/groups/' + group.id + '/feeds', { method: 'PATCH', body: { feedId, member } });
+          if (member) { if (!group.feedIds.includes(feedId)) group.feedIds.push(feedId); }
+          else group.feedIds = group.feedIds.filter((id) => id !== feedId);
+          renderGroupList();
+        } catch (e) { toast(e.message, true); }
+      }
+
+      // Member feeds shown as removable chips.
+      const chips = el('div', { class: 'rssgroup__chips' });
+      const memberFeeds = feeds.filter((f) => group.feedIds.includes(f.id));
+      if (!memberFeeds.length) {
+        chips.append(el('span', { class: 'field__hint', style: 'margin:0' }, 'No feeds in this group yet.'));
+      } else {
+        for (const feed of memberFeeds) {
+          const x = el('button', { class: 'rsschip__x', type: 'button', title: 'Remove from group', 'aria-label': 'Remove from group' }, '×');
+          x.addEventListener('click', () => setMember(feed.id, false));
+          chips.append(el('span', { class: 'rsschip' }, el('span', { class: 'rsschip__label' }, feed.title || feed.url), x));
+        }
+      }
+
+      // "Add feed" dropdown listing feeds not already in the group.
+      const available = feeds.filter((f) => !group.feedIds.includes(f.id));
+      let adder;
+      if (!feeds.length) {
+        adder = el('div', { class: 'field__hint', style: 'margin-top:8px' }, 'Add feeds in the RSS Feeds section first, then assign them here.');
+      } else if (!available.length) {
+        adder = el('div', { class: 'field__hint', style: 'margin-top:8px' }, 'All your feeds are already in this group.');
+      } else {
+        const sel = el('select', { class: 'rssgroup__add' },
+          el('option', { value: '' }, '+ Add a feed to this group…'),
+          ...available.map((f) => el('option', { value: f.id }, f.title || f.url)),
+        );
+        sel.addEventListener('change', () => { if (sel.value) setMember(sel.value, true); });
+        adder = sel;
+      }
+
+      groupListEl.append(
         el('div', { class: 'rssitem' },
           el('div', { class: 'rssitem__head' },
-            el('div', { class: 'rssitem__title' }, feed.title || feed.url),
-            del,
-          ),
-          el('div', { class: 'rssitem__url' }, feed.url),
-          el('div', { class: 'rssitem__toggles' },
-            toggleRow(feed, 'enabled', 'Enabled'),
-            toggleRow(feed, 'onMain', 'Main page'),
-            toggleRow(feed, 'onSearch', 'Search page'),
-          ),
+            el('div', { class: 'rssitem__title' }, group.name),
+            del),
+          el('div', { class: 'field__hint', style: 'margin:6px 0 4px' }, 'Feeds in this group:'),
+          chips,
+          adder,
         )
       );
     }
   }
-  renderList();
 
-  // Refresh interval control.
-  const refreshInput = el('input', {
-    type: 'number', min: '1', max: '1440', value: String(refreshMinutes),
-    style: 'width:90px;flex:none',
-  });
+  function buildGroups(box) {
+    const nameInput = el('input', { type: 'text', placeholder: 'Group name (e.g. News, Dev, FFXIV)' });
+    const addBtn = el('button', { class: 'btn btn--primary btn--small', type: 'button' }, 'Create');
+    const addMsg = el('div', { class: 'formmsg' });
+    async function addGroup() {
+      const name = nameInput.value.trim();
+      if (!name) return;
+      addBtn.disabled = true; addMsg.textContent = '';
+      try {
+        const d = await api('/rss/groups', { method: 'POST', body: { name } });
+        groups.push(d.group);
+        nameInput.value = '';
+        renderGroupList();
+        toast('Group created.');
+      } catch (e) { addMsg.className = 'formmsg formmsg--error'; addMsg.textContent = e.message; }
+      finally { addBtn.disabled = false; }
+    }
+    addBtn.addEventListener('click', addGroup);
+    nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addGroup(); });
+    renderGroupList();
+    box.append(
+      el('div', { class: 'field__hint', style: 'margin-bottom:10px' },
+        'Create groups and assign feeds to them. A feed can be in any number of groups. Switch groups from the dropdown on the feed panel.'),
+      el('div', { class: 'rssadd' }, nameInput, addBtn),
+      addMsg,
+      groupListEl,
+    );
+  }
+
+  // ---------- Refresh interval ----------
+  const refreshInput = el('input', { type: 'number', min: '1', max: '1440', value: String(refreshMinutes), style: 'width:90px;flex:none' });
   const refreshSave = el('button', { class: 'btn btn--ghost btn--small', type: 'button' }, 'Save');
   refreshSave.addEventListener('click', async () => {
     const m = parseInt(refreshInput.value, 10);
@@ -1490,12 +1601,9 @@ async function renderRssTab(panel) {
   });
 
   panel.append(
-    el('div', { class: 'account__sectionlabel' }, 'RSS feeds'),
-    el('div', { class: 'field__hint', style: 'margin-bottom:10px' },
-      'Add feed URLs, then choose where each appears. Feeds show in a panel on the right side of the page.'),
-    el('div', { class: 'rssadd' }, urlInput, addBtn),
-    addMsg,
-    list,
+    el('div', { class: 'account__sectionlabel' }, 'RSS'),
+    collapsible('RSS Feeds', true, buildFeeds),
+    collapsible('RSS Groups', false, buildGroups),
     el('hr', { class: 'account__rule' }),
     el('div', { class: 'account__sectionlabel' }, 'Refresh interval'),
     el('div', { class: 'field__hint', style: 'margin-bottom:8px' }, 'How often the feed panel updates, in minutes (default 5).'),
@@ -1743,6 +1851,9 @@ async function loadRssSettings() {
   try {
     const d = await api('/rss/feeds');
     if (Number.isFinite(d.refreshMinutes)) state.rssRefreshMinutes = d.refreshMinutes;
+    state.rssGroups = d.groups || [];
+    state.rssHasFeeds = (d.feeds || []).length > 0;
+    state.rssActiveGroup = typeof d.activeGroup === 'string' ? d.activeGroup : '';
   } catch { /* keep default */ }
   armRssRefresh();
 }
@@ -1771,67 +1882,124 @@ function armRssAgoTicker() {
   rssAgoTimer = setInterval(tick, 1000);
 }
 
+function activeGroupName() {
+  const id = state.rssActiveGroup || '';
+  if (!id) return 'All Feeds';
+  const g = (state.rssGroups || []).find((x) => x.id === id);
+  return g ? g.name : 'All Feeds';
+}
+
+// Build the clickable group-selector header. Clicking the name opens a menu of
+// "All Feeds" + every group; choosing one switches the active group, persists
+// it per account, and reloads entries.
+function buildRssHeader() {
+  const head = el('div', { class: 'rsspanel__head' });
+
+  const caret = el('span', { class: 'rsspanel__caret', html: '<svg viewBox="0 0 24 24" width="14" height="14"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' });
+  const nameBtn = el('button', { class: 'rsspanel__group', type: 'button', title: 'Switch group' },
+    el('span', { class: 'rsspanel__groupname' }, activeGroupName()), caret);
+
+  const menu = el('div', { class: 'rsspanel__menu', hidden: true });
+  function buildMenu() {
+    menu.innerHTML = '';
+    const opts = [{ id: '', name: 'All Feeds' }, ...(state.rssGroups || [])];
+    for (const o of opts) {
+      const active = (state.rssActiveGroup || '') === o.id;
+      const item = el('button', { class: 'rsspanel__menuitem' + (active ? ' rsspanel__menuitem--active' : ''), type: 'button' }, o.name);
+      item.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        menu.hidden = true;
+        if ((state.rssActiveGroup || '') === o.id) return;
+        state.rssActiveGroup = o.id;
+        try { await api('/rss/settings', { method: 'PATCH', body: { activeGroup: o.id } }); }
+        catch (e) { toast(e.message, true); }
+        loadRssPanel();
+      });
+      menu.append(item);
+    }
+  }
+  nameBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    if (menu.hidden) { buildMenu(); menu.hidden = false; }
+    else menu.hidden = true;
+  });
+  // Close the menu on any outside click.
+  document.addEventListener('click', () => { menu.hidden = true; });
+
+  const left = el('div', { class: 'rsspanel__headleft' },
+    el('div', { class: 'rsspanel__groupwrap' }, nameBtn, menu),
+    el('span', { class: 'rsspanel__ago', id: 'rssAgo' }, 'just now'),
+  );
+  const refreshBtn = el('button', {
+    class: 'rsspanel__refresh',
+    'aria-label': 'Refresh feeds',
+    title: 'Refresh feeds',
+    html: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 12.8-5.3M19.5 12a7.5 7.5 0 0 1-12.8 5.3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M17 3v4h-4M7 21v-4h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  });
+  refreshBtn.addEventListener('click', (ev) => { ev.stopPropagation(); loadRssPanel(); });
+  head.append(left, refreshBtn);
+  return head;
+}
+
 async function loadRssPanel() {
   const panel = $('#rssPanel');
   if (!panel) return;
   if (!state.user) { panel.hidden = true; panel.innerHTML = ''; document.body.classList.remove('has-rss'); return; }
 
-  const context = isSearching() ? 'search' : 'main';
+  const groupId = state.rssActiveGroup || '';
+  let entries = [];
   try {
-    const d = await api('/rss/entries?context=' + context);
-    const entries = d.entries || [];
-    if (!entries.length) {
-      panel.hidden = true; panel.innerHTML = '';
-      document.body.classList.remove('has-rss');
-      return;
-    }
-    panel.innerHTML = '';
-    state.rssLastRefresh = Date.now();
-    const head = el('div', { class: 'rsspanel__head' });
-    const left = el('div', { class: 'rsspanel__headleft' },
-      el('span', {}, 'Feeds'),
-      el('span', { class: 'rsspanel__ago', id: 'rssAgo' }, 'just now'),
-    );
-    const refreshBtn = el('button', {
-      class: 'rsspanel__refresh',
-      'aria-label': 'Refresh feeds',
-      title: 'Refresh feeds',
-      html: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 0 1 12.8-5.3M19.5 12a7.5 7.5 0 0 1-12.8 5.3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M17 3v4h-4M7 21v-4h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>',
-    });
-    refreshBtn.addEventListener('click', () => { loadRssPanel(); });
-    head.append(left, refreshBtn);
-    panel.append(head);
-    armRssAgoTicker();
-    for (const e of entries) {
-      // Feed header row: favicon + feed name.
-      const fhead = el('div', { class: 'rsscard__feedrow' });
-      if (e.favicon) {
-        const fav = el('img', { class: 'rsscard__fav', src: e.favicon, alt: '', loading: 'lazy' });
-        // Hide the icon gracefully if the site has no /favicon.ico.
-        fav.addEventListener('error', () => fav.remove());
-        fhead.append(fav);
-      }
-      fhead.append(el('span', { class: 'rsscard__feed' }, e.feedTitle || ''));
-
-      const card = el('a', {
-        class: 'rsscard',
-        href: e.link || '#',
-        target: '_blank',
-        rel: 'noopener noreferrer',
-      },
-        fhead,
-        el('div', { class: 'rsscard__title' }, e.title || '(no title)'),
-        e.summary ? el('div', { class: 'rsscard__summary' }, e.summary) : null,
-        e.date ? el('div', { class: 'rsscard__date' }, formatRssDate(e.date)) : null,
-      );
-      panel.append(card);
-    }
-    panel.hidden = false;
-    document.body.classList.add('has-rss');
+    const d = await api('/rss/entries?group=' + encodeURIComponent(groupId));
+    entries = d.entries || [];
   } catch {
     panel.hidden = true; panel.innerHTML = '';
     document.body.classList.remove('has-rss');
+    return;
   }
+
+  // Hide the panel entirely only when the user has no feeds at all. If they
+  // have feeds but the active group is empty, keep the panel (and its group
+  // dropdown) visible with an empty-state message so they can switch back.
+  if (!entries.length && !state.rssHasFeeds) {
+    panel.hidden = true; panel.innerHTML = '';
+    document.body.classList.remove('has-rss');
+    return;
+  }
+
+  panel.innerHTML = '';
+  state.rssLastRefresh = Date.now();
+  panel.append(buildRssHeader());
+  armRssAgoTicker();
+
+  if (!entries.length) {
+    panel.append(el('div', { class: 'field__hint', style: 'padding:14px 4px' },
+      'No entries in this group yet. Pick another group above, or add feeds to it in Settings → RSS.'));
+  }
+
+  for (const e of entries) {
+    const fhead = el('div', { class: 'rsscard__feedrow' });
+    if (e.favicon) {
+      const fav = el('img', { class: 'rsscard__fav', src: e.favicon, alt: '', loading: 'lazy' });
+      fav.addEventListener('error', () => fav.remove());
+      fhead.append(fav);
+    }
+    fhead.append(el('span', { class: 'rsscard__feed' }, e.feedTitle || ''));
+
+    const card = el('a', {
+      class: 'rsscard',
+      href: e.link || '#',
+      target: '_blank',
+      rel: 'noopener noreferrer',
+    },
+      fhead,
+      el('div', { class: 'rsscard__title' }, e.title || '(no title)'),
+      e.summary ? el('div', { class: 'rsscard__summary' }, e.summary) : null,
+      e.date ? el('div', { class: 'rsscard__date' }, formatRssDate(e.date)) : null,
+    );
+    panel.append(card);
+  }
+  panel.hidden = false;
+  document.body.classList.add('has-rss');
 }
 
 function formatRssDate(d) {
