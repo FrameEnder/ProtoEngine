@@ -1,186 +1,170 @@
-import fs from 'fs';
-import fsp from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
+# ProtoEngine
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = path.join(__dirname, 'data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const SITES_FILE = path.join(DATA_DIR, 'sites.json');
+A self-hostable search engine for the websites your group, team, or homelab actually uses. It looks and behaves like dark-mode Google: a centered search, clean result listings with a favicon, the site name, a green-ish URL crumb, a description, and clickable tags at the bottom of each listing. Tags filter the results when tapped.
 
-// Ensure data directory and files exist
-function ensure(file, fallback) {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(file)) fs.writeFileSync(file, JSON.stringify(fallback, null, 2));
-}
-ensure(USERS_FILE, []);
-ensure(SITES_FILE, []);
+Listings live in a plain `data/sites.json` file. Accounts live in `data/users.json`. There is no external database to run.
 
-// Simple in-process write queue to serialize writes per file (avoids races
-// in a single-process self-hosted deployment).
-const queues = new Map();
-function withLock(file, fn) {
-  const prev = queues.get(file) || Promise.resolve();
-  const next = prev.then(fn, fn);
-  queues.set(file, next.catch(() => {}));
-  return next;
-}
+## Features
 
-async function readJSON(file) {
-  const raw = await fsp.readFile(file, 'utf8');
-  return JSON.parse(raw || '[]');
-}
+- **Google-style results** with per-listing favicon, name, URL, description, and clickable tag chips that filter.
+- **Accounts**: register, log in, log out. The **first account created becomes the admin** automatically.
+- **Add websites** with a top-bar `+` button (visible only when signed in). The dialog collects name, URL, description, tags, and an uploaded favicon.
+- **Roles**:
+  - **User** — manage their own listings; change their own username and password.
+  - **Moderator** — edit and delete any listing.
+  - **Admin** — everything moderators can do, plus an **Admin panel** to delete users, change roles, reset passwords, and manage every listing.
+- **Security**: bcrypt password hashing, HTTP-only signed session cookies, CSRF protection on every write, rate limiting on auth and writes, Helmet security headers with a strict Content-Security-Policy, upload type/size validation, and atomic JSON writes.
 
-// Atomic write: write to temp file then rename.
-async function writeJSON(file, data) {
-  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
-  await fsp.writeFile(tmp, JSON.stringify(data, null, 2));
-  await fsp.rename(tmp, file);
-}
+## Quick start (local)
 
-export const db = {
-  // ---- Users ----
-  async getUsers() {
-    return readJSON(USERS_FILE);
-  },
-  async getUserById(id) {
-    const users = await readJSON(USERS_FILE);
-    return users.find((u) => u.id === id) || null;
-  },
-  async getUserByUsername(username) {
-    const users = await readJSON(USERS_FILE);
-    const lc = username.toLowerCase();
-    return users.find((u) => u.username.toLowerCase() === lc) || null;
-  },
-  // Find a user by the public id portion of their API key. The secret itself
-  // is verified separately (hash compare) by the caller.
-  async getUserByApiKeyId(keyId) {
-    if (!keyId) return null;
-    const users = await readJSON(USERS_FILE);
-    return users.find((u) => u.apiKeyId === keyId) || null;
-  },
-  async addUser(user) {
-    return withLock(USERS_FILE, async () => {
-      const users = await readJSON(USERS_FILE);
-      users.push(user);
-      await writeJSON(USERS_FILE, users);
-      return user;
-    });
-  },
-  async updateUser(id, patch) {
-    return withLock(USERS_FILE, async () => {
-      const users = await readJSON(USERS_FILE);
-      const idx = users.findIndex((u) => u.id === id);
-      if (idx === -1) return null;
-      users[idx] = { ...users[idx], ...patch };
-      await writeJSON(USERS_FILE, users);
-      return users[idx];
-    });
-  },
-  async deleteUser(id) {
-    return withLock(USERS_FILE, async () => {
-      const users = await readJSON(USERS_FILE);
-      const next = users.filter((u) => u.id !== id);
-      await writeJSON(USERS_FILE, next);
-      return users.length !== next.length;
-    });
-  },
+```bash
+npm install
+cp .env.example .env        # then edit .env and set the two secrets
+npm start
+```
 
-  // ---- Sites ----
-  async getSites() {
-    return readJSON(SITES_FILE);
-  },
-  async getSiteById(id) {
-    const sites = await readJSON(SITES_FILE);
-    return sites.find((s) => s.id === id) || null;
-  },
-  async addSite(site) {
-    return withLock(SITES_FILE, async () => {
-      const sites = await readJSON(SITES_FILE);
-      sites.push(site);
-      await writeJSON(SITES_FILE, sites);
-      return site;
-    });
-  },
-  async updateSite(id, patch) {
-    return withLock(SITES_FILE, async () => {
-      const sites = await readJSON(SITES_FILE);
-      const idx = sites.findIndex((s) => s.id === id);
-      if (idx === -1) return null;
-      sites[idx] = { ...sites[idx], ...patch };
-      await writeJSON(SITES_FILE, sites);
-      return sites[idx];
-    });
-  },
-  async deleteSite(id) {
-    return withLock(SITES_FILE, async () => {
-      const sites = await readJSON(SITES_FILE);
-      const next = sites.filter((s) => s.id !== id);
-      await writeJSON(SITES_FILE, next);
-      return sites.length !== next.length;
-    });
-  },
-  // Atomically replace the entire sites list (used by snapshot import).
-  async replaceAllSites(sites) {
-    return withLock(SITES_FILE, async () => {
-      await writeJSON(SITES_FILE, Array.isArray(sites) ? sites : []);
-      return sites;
-    });
-  },
-};
+Open http://localhost:3000 and register — that first account is your admin.
 
-// Paths exposed for backup/snapshot tooling.
-export const paths = {
-  DATA_DIR,
-  SITES_FILE,
-  TAGLINE_FILE: path.join(DATA_DIR, 'tagline.json'),
-  SETTINGS_FILE: path.join(DATA_DIR, 'settings.json'),
-  ICONS_DIR: path.join(__dirname, 'public', 'icons'),
-};
+Generate strong secrets for `.env`:
 
-// ---- Branding & site settings (admin-editable) ----
-export const HERO_ANIMATIONS = [
-  'rise', 'fade-in', 'pop', 'flip', 'wave', 'drop', 'zoom', 'blur-in',
-  'slide-left', 'swing', 'bounce', 'glow', 'typewriter', 'spin-in', 'rubber',
-];
-const DEFAULT_TAGLINES = ['Search the sites your people actually use.'];
-const ENV_APP_NAME = (process.env.APP_NAME || 'ProtoEngine')
-  .replace(/[<>&"'`]/g, '').trim().slice(0, 40) || 'ProtoEngine';
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
 
-function sanitizeName(s, fallback) {
-  const out = String(s || '').replace(/[<>&"'`]/g, '').trim().slice(0, 40);
-  return out || fallback;
-}
-function sanitizeTaglines(arr) {
-  const list = (Array.isArray(arr) ? arr : [])
-    .filter((t) => typeof t === 'string')
-    .map((t) => t.trim().slice(0, 200))
-    .filter(Boolean);
-  return list.length ? list : DEFAULT_TAGLINES.slice();
-}
+Set the output as `SESSION_SECRET`, run it again for `CSRF_SECRET`. If you skip this, the app generates temporary secrets and warns you; sessions then reset on every restart.
 
-export const settings = {
-  read() {
-    let s = {};
-    try { s = JSON.parse(fs.readFileSync(paths.SETTINGS_FILE, 'utf8')); } catch { s = {}; }
-    const appName = sanitizeName(s.appName, ENV_APP_NAME);
-    return {
-      appName,
-      tabTitle: sanitizeName(s.tabTitle, appName),
-      taglines: sanitizeTaglines(s.taglines),
-      heroAnimation: (s.heroAnimation === 'random' || HERO_ANIMATIONS.includes(s.heroAnimation)) ? s.heroAnimation : 'random',
-    };
-  },
-  write(patch) {
-    const next = { ...this.read(), ...patch };
-    next.appName = sanitizeName(next.appName, ENV_APP_NAME);
-    next.tabTitle = sanitizeName(next.tabTitle, next.appName);
-    next.taglines = sanitizeTaglines(next.taglines);
-    if (next.heroAnimation !== 'random' && !HERO_ANIMATIONS.includes(next.heroAnimation)) next.heroAnimation = 'random';
-    try {
-      fs.mkdirSync(paths.DATA_DIR, { recursive: true });
-      fs.writeFileSync(paths.SETTINGS_FILE, JSON.stringify(next, null, 2));
-    } catch { /* non-fatal */ }
-    return next;
-  },
-};
+## Self-hosting with Podman or Docker
+
+```bash
+cp .env.example .env        # set SESSION_SECRET and CSRF_SECRET
+podman-compose up -d        # or: docker compose up -d
+```
+
+The compose file persists three things via volumes so your data survives rebuilds:
+
+- `./data` — the JSON datastore and session files
+- `./public/icons` — uploaded favicons
+
+The container runs as a non-root user. Put it behind a reverse proxy (nginx, Caddy, Traefik) that terminates TLS, and keep `NODE_ENV=production` so session cookies are marked `Secure`.
+
+## Deploying on a UGREEN NAS (UGOS Pro) with Docker
+
+UGOS Pro includes Docker and Compose. Build from the command line over SSH —
+it's the most reliable path for a build-from-source app. Use the Docker
+compose file (`compose.docker.yaml`), **not** the Podman one.
+
+1. Enable SSH on the NAS: Control Panel → Terminal & SNMP → enable SSH.
+2. SSH in and find a place for the app, e.g. a shared folder:
+   ```bash
+   ssh youruser@your-nas-ip
+   cd /volume1/docker        # or wherever you keep app data
+   ```
+3. Copy the project there (via SCP, the File Manager, or git), then:
+   ```bash
+   cd searchengine
+   id                        # note your uid= and gid=
+   ```
+4. Create `.env` from the example and set the secrets, plus `PUID`/`PGID`
+   to the `uid`/`gid` from the previous step:
+   ```bash
+   cp .env.example .env
+   nano .env
+   # set SESSION_SECRET, CSRF_SECRET, and (if your user isn't 1000):
+   #   PUID=1000
+   #   PGID=1000
+   ```
+5. Build and start using the Docker compose file:
+   ```bash
+   docker compose -f compose.docker.yaml up -d --build
+   ```
+6. Open `http://your-nas-ip:3000` and register — the first account is admin.
+
+Why a separate compose file: the Podman `compose.yaml` uses `userns_mode`
+and `:Z` labels that Docker rejects or doesn't need. `compose.docker.yaml`
+drops those and adds a `user:` directive (`PUID:PGID`) so the container can
+write to the bind-mounted `./data` and `./public/icons` folders.
+
+If you hit permission errors on `./data`, make the host folders owned by your
+NAS user once: `sudo chown -R $(id -u):$(id -g) ./data ./public/icons`.
+
+To expose it outside your LAN, use UGOS's reverse proxy (or your own) to put
+HTTPS in front, then set `SECURE_COOKIES=true` in `.env` and restart.
+
+## Account settings
+
+Account settings is organized into tabs:
+
+- **Login & security** — change username/password, generate or revoke your API key.
+- **Customization** — profile picture and per-user background image.
+- **RSS feeds** — add feed URLs and toggle, per feed, whether it's enabled and
+  whether it appears on the main page and/or the search page. Enabled feeds
+  render in a panel on the right side of the screen (on wide viewports), with
+  entries merged and sorted newest-first. Feeds are fetched and parsed
+  server-side (RSS 2.0 and Atom), cached briefly, with a guard against
+  pointing feeds at internal/loopback hosts.
+
+## API access
+
+Each account can generate a personal API key from Account settings. The key
+is shown once — copy it then. Send it as a Bearer token:
+
+```bash
+curl -H "Authorization: Bearer lmn_xxxx_yyyy" \
+  https://your-host/api/sites?q=docs
+```
+
+API requests authenticate as that account and carry its permissions: a user
+key can manage that user's own listings; a moderator key can edit any listing;
+an admin key can use the admin endpoints. Token requests skip CSRF (that
+protects cookie sessions, not tokens). Revoke a key any time from Account
+settings; admins can revoke any user's key from the admin panel's Users tab.
+Keys are stored hashed, never in plaintext.
+
+Useful endpoints: `GET /api/sites` (search/list, public), `POST /api/sites`
+(add), `PATCH/DELETE /api/sites/:id` (manage), `GET /api/config`. Writes via
+multipart form or JSON, same fields as the web UI.
+
+## Project layout
+
+```
+server.js            Express app: security middleware, sessions, CSRF, routing
+data-store.js        Atomic JSON read/write with a per-file write queue
+util.js              Validation + sanitization helpers
+middleware/auth.js   Session loading and role/permission guards
+routes/auth.js       register, login, logout, account self-service
+routes/sites.js      list/search, add, edit, delete listings (+ icon upload)
+routes/admin.js      user management (admin only)
+public/              Frontend: index.html, styles.css, app.js
+data/                users.json, sites.json, sessions/  (created at runtime)
+```
+
+## How permissions are enforced
+
+Every mutating request is checked on the server, not just hidden in the UI:
+
+- Adding a listing requires any signed-in account.
+- Editing or deleting a listing requires being its owner, a moderator, or an admin.
+- The admin panel routes require the admin role.
+- The last remaining admin cannot be demoted or deleted, so you can never lock yourself out.
+
+## Customizing the branding
+
+Branding is edited in the app by an admin: open **Settings → Admin Panel →
+Branding**. From there you can set:
+
+- **Brand name** — appears in the page header, hero word, and dialogs.
+- **Browser tab title** — the `<title>` shown in the browser tab.
+- **Taglines** — one per line; a random one shows under the hero each load.
+- **Hero animation** — the entrance animation for the brand hero, chosen from
+  15 options or left on "Random" to cycle through them.
+
+These are stored in `data/settings.json` and applied without a restart. On
+first run, `APP_NAME` from `.env` seeds the default brand name, and any legacy
+`data/tagline.json` is migrated into the settings automatically.
+
+## Notes
+
+- Search matches across name, URL, description, and tags; multiple words are ANDed.
+- URLs without a scheme get `https://` added automatically.
+- Favicons accept PNG, JPG, GIF, WEBP, SVG, or ICO up to 512 KB.
+- When a user is deleted, the admin chooses whether to also remove their listings or keep them (re-labeled as belonging to a deleted user).
