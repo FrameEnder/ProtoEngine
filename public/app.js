@@ -20,7 +20,7 @@ const esc = (s) => String(s ?? '');
 const state = {
   user: null,
   csrf: null,
-  appName: 'Lumen',
+  appName: 'ProtoEngine',
   query: '',
   tags: [],          // active tag filters (all must match)
   sort: 'newest',    // newest | oldest | name | name_desc
@@ -253,6 +253,22 @@ function attachFavDrag(tile, site, grid) {
   tile.addEventListener('pointerdown', onDown);
 }
 
+// Favorites edit mode (pencil) + view orientation icons.
+let favEditMode = false;
+const FAV_PENCIL_ICON = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M4 20h4l10-10-4-4L4 16v4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M13.5 6.5l4 4" stroke="currentColor" stroke-width="1.8"/></svg>';
+const FAV_DONE_ICON = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M5 12l5 5 9-10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const FAV_LIST_ICON = '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M8 6h12M8 12h12M8 18h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="4" cy="6" r="1.4" fill="currentColor"/><circle cx="4" cy="12" r="1.4" fill="currentColor"/><circle cx="4" cy="18" r="1.4" fill="currentColor"/></svg>';
+const FAV_GRID_ICON = '<svg viewBox="0 0 24 24" width="16" height="16"><rect x="4" y="4" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="14" y="4" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="4" y="14" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="14" y="14" width="6" height="6" rx="1.5" fill="currentColor"/></svg>';
+
+async function toggleFavView() {
+  const next = (state.user.favoritesView === 'list') ? 'grid' : 'list';
+  state.user.favoritesView = next;
+  renderFavorites();
+  try {
+    await api('/auth/favorites/view', { method: 'PATCH', body: { view: next } });
+  } catch (e) { toast(e.message, true); }
+}
+
 async function renderFavorites() {
   const panel = $('#favPanel');
   if (!panel) return;
@@ -275,8 +291,30 @@ async function renderFavorites() {
   }
 
   panel.innerHTML = '';
-  panel.append(el('div', { class: 'favpanel__head' }, 'Favorites'));
-  const grid = el('div', { class: 'favgrid' });
+  const view = (state.user.favoritesView === 'list') ? 'list' : 'grid';
+
+  // Header: title + list/grid toggle + edit pencil.
+  const viewBtn = el('button', {
+    class: 'favpanel__btn',
+    title: view === 'grid' ? 'List view' : 'Grid view',
+    'aria-label': 'Toggle view',
+    onclick: () => toggleFavView(),
+  }, el('span', { html: view === 'grid' ? FAV_LIST_ICON : FAV_GRID_ICON }));
+  const editBtn = el('button', {
+    class: 'favpanel__btn' + (favEditMode ? ' favpanel__btn--active' : ''),
+    title: favEditMode ? 'Done' : 'Edit favorites',
+    'aria-label': 'Edit favorites',
+    onclick: () => { favEditMode = !favEditMode; renderFavorites(); },
+  }, el('span', { html: favEditMode ? FAV_DONE_ICON : FAV_PENCIL_ICON }));
+
+  panel.append(
+    el('div', { class: 'favpanel__head' },
+      el('span', {}, 'Favorites'),
+      el('div', { class: 'favpanel__actions' }, viewBtn, editBtn),
+    )
+  );
+
+  const grid = el('div', { class: 'favgrid favgrid--' + view + (favEditMode ? ' favgrid--editing' : '') });
 
   for (const site of sites) {
     const tile = el('a', {
@@ -290,7 +328,24 @@ async function renderFavorites() {
       el('span', { class: 'favtile__name' }, el('span', {}, site.name)),
     );
     tile.dataset.id = site.id;
-    attachFavDrag(tile, site, grid);
+
+    if (favEditMode) {
+      // Delete badge: a red X that confirms then removes the favorite.
+      const del = el('button', {
+        class: 'favtile__del',
+        title: 'Remove favorite',
+        'aria-label': 'Remove favorite',
+        onclick: (e) => {
+          e.preventDefault(); e.stopPropagation();
+          if (confirm(`Remove "${site.name}" from favorites?`)) toggleFavorite(site.id);
+        },
+      }, '×');
+      tile.append(del);
+      // In edit mode the tile shouldn't navigate.
+      tile.addEventListener('click', (e) => e.preventDefault());
+    } else {
+      attachFavDrag(tile, site, grid);
+    }
     grid.append(tile);
   }
   panel.append(grid);
@@ -981,7 +1036,7 @@ async function deleteSite(site) {
 }
 
 // ---------- account settings ----------
-function openAccountModal() {
+function openSettingsPage() {
   const msg = el('div', { class: 'formmsg' });
 
   // --- Profile picture section ---
@@ -1081,9 +1136,11 @@ function openAccountModal() {
     try {
       const d = await api('/auth/account', { method: 'PATCH', body });
       state.user.username = d.user.username;
-      closeModal();
       syncChrome();
-      toast('Account updated.');
+      msg.className = 'formmsg formmsg--ok';
+      msg.textContent = 'Account updated.';
+      submit.disabled = false;
+      current.value = ''; next.value = '';
       loadSites();
     } catch (err) {
       msg.className = 'formmsg formmsg--error';
@@ -1143,50 +1200,184 @@ function openAccountModal() {
   }
   renderApiSection();
 
-  // --- Tabbed layout ---
-  const panels = {
-    security: el('div', {},
-      el('div', { class: 'account__sectionlabel' }, 'Username & password'),
-      form,
-      el('hr', { class: 'account__rule' }),
-      apiSection,
-    ),
-    customization: el('div', {},
-      el('div', { class: 'account__sectionlabel' }, 'Profile picture'),
-      avatarSection,
-      el('hr', { class: 'account__rule' }),
-      el('div', { class: 'account__sectionlabel' }, 'Background image'),
-      bgSection,
-    ),
-    rss: el('div', {}), // populated lazily by renderRssTab
-  };
+  // --- Build the five settings panels ---
+  const panelAccount = el('div', {},
+    el('div', { class: 'account__sectionlabel' }, 'Profile picture'),
+    avatarSection,
+    el('hr', { class: 'account__rule' }),
+    el('div', { class: 'account__sectionlabel' }, 'Username & password'),
+    form,
+  );
+  const panelCustomization = el('div', {},
+    el('div', { class: 'account__sectionlabel' }, 'Background image'),
+    bgSection,
+  );
+  const panelRss = el('div', {});
+  const panelDeveloper = el('div', {},
+    apiSection,
+  );
+  const panelAdmin = el('div', {});
 
-  const tabsBar = el('div', { class: 'tabs' });
-  const content = el('div', { class: 'account__content' });
   const tabDefs = [
-    ['security', 'Login & security'],
-    ['customization', 'Customization'],
-    ['rss', 'RSS feeds'],
+    ['account', 'Account', panelAccount],
+    ['customization', 'Customization', panelCustomization],
+    ['rss', 'RSS', panelRss],
+    ['developer', 'Developer', panelDeveloper],
   ];
+  if (state.user.role === 'admin') tabDefs.push(['admin', 'Admin Panel', panelAdmin]);
+
+  const rail = el('nav', { class: 'settings__rail' });
+  const content = el('div', { class: 'settings__content' });
   const tabButtons = {};
-  let rssLoaded = false;
+  const loaded = {};
   function showTab(key) {
-    Object.values(tabButtons).forEach((b) => b.classList.remove('tab--active'));
-    tabButtons[key].classList.add('tab--active');
+    Object.values(tabButtons).forEach((b) => b.classList.remove('settings__tab--active'));
+    tabButtons[key].classList.add('settings__tab--active');
     content.innerHTML = '';
-    content.append(panels[key]);
-    if (key === 'rss' && !rssLoaded) { rssLoaded = true; renderRssTab(panels.rss); }
+    const panel = tabDefs.find((t) => t[0] === key)[2];
+    content.append(panel);
+    if (key === 'rss' && !loaded.rss) { loaded.rss = true; renderRssTab(panel); }
+    if (key === 'admin' && !loaded.admin) { loaded.admin = true; renderAdminInto(panel); }
+    // Reflect the active tab in the URL hash for refresh/back support.
+    history.replaceState(null, '', '/settings#' + key);
   }
   for (const [key, label] of tabDefs) {
-    const b = el('button', { class: 'tab', onclick: () => showTab(key) }, label);
+    const b = el('button', { class: 'settings__tab', onclick: () => showTab(key) }, label);
     tabButtons[key] = b;
-    tabsBar.append(b);
+    rail.append(b);
   }
 
-  const wrap = el('div', {}, tabsBar, content);
-  showTab('security');
+  const page = $('#settingsPage');
+  page.innerHTML = '';
+  page.append(
+    el('header', { class: 'settings__top' },
+      el('button', { class: 'settings__back', onclick: closeSettingsPage, 'aria-label': 'Back' },
+        el('span', { html: '<svg viewBox="0 0 24 24" width="20" height="20"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' })),
+      el('h1', { class: 'settings__title' }, 'Settings'),
+    ),
+    el('div', { class: 'settings__body' }, rail, content),
+  );
+  page.hidden = false;
+  document.body.classList.add('settings-open');
 
-  openModal(modalShell('Account settings', wrap, true));
+  // Open the tab named in the hash, else the first tab.
+  const wantedHash = (window.location.hash || '').replace('#', '');
+  const initial = tabDefs.some((t) => t[0] === wantedHash) ? wantedHash : 'account';
+  showTab(initial);
+}
+
+// Close the settings page and return to the app.
+function closeSettingsPage() {
+  const page = $('#settingsPage');
+  if (page) { page.hidden = true; page.innerHTML = ''; }
+  document.body.classList.remove('settings-open');
+  if (window.location.pathname === '/settings') {
+    history.replaceState(null, '', '/');
+  }
+}
+
+// Render the admin panel (users / listings / backup) into a settings panel.
+function renderAdminInto(panel) {
+  panel.innerHTML = '';
+  const tabs = el('div', { class: 'tabs' });
+  const content = el('div', { style: 'padding-top:16px' });
+  const tabBranding = el('button', { class: 'tab tab--active' }, 'Branding');
+  const tabUsers = el('button', { class: 'tab' }, 'Users');
+  const tabSites = el('button', { class: 'tab' }, 'Listings');
+  const tabBackup = el('button', { class: 'tab' }, 'Backup');
+  tabs.append(tabBranding, tabUsers, tabSites, tabBackup);
+  const all = [tabBranding, tabUsers, tabSites, tabBackup];
+  function setActive(t) { all.forEach((x) => x.classList.toggle('tab--active', x === t)); }
+  tabBranding.onclick = () => { setActive(tabBranding); renderBrandingTab(content); };
+  tabUsers.onclick = () => { setActive(tabUsers); renderUsersTab(content); };
+  tabSites.onclick = () => { setActive(tabSites); renderSitesTab(content); };
+  tabBackup.onclick = () => { setActive(tabBackup); renderBackupTab(content); };
+  panel.append(tabs, content);
+  renderBrandingTab(content);
+}
+
+// Branding sub-tab: brand name, browser tab title, taglines, hero animation.
+async function renderBrandingTab(content) {
+  content.innerHTML = '';
+  content.append(el('div', { class: 'placeholder' }, 'Loading…'));
+  let s, anims;
+  try {
+    const d = await api('/admin/settings');
+    s = d.settings; anims = d.heroAnimations || [];
+  } catch (e) {
+    content.innerHTML = ''; content.append(el('div', { class: 'placeholder' }, e.message)); return;
+  }
+  content.innerHTML = '';
+
+  const nameInput = el('input', { type: 'text', value: s.appName, maxlength: '40' });
+  const titleInput = el('input', { type: 'text', value: s.tabTitle, maxlength: '40' });
+  const taglinesArea = el('textarea', { rows: '5', style: 'width:100%;resize:vertical' }, s.taglines.join('\n'));
+
+  // Hero animation selector: "Random" plus each named animation.
+  const animSelect = el('select', { style: 'width:100%' },
+    el('option', { value: 'random', ...(s.heroAnimation === 'random' ? { selected: 'selected' } : {}) }, 'Random (cycle through all)'),
+    ...anims.map((a) => el('option', { value: a, ...(s.heroAnimation === a ? { selected: 'selected' } : {}) }, a)),
+  );
+  // Visible preview target: a mini hero that plays the selected animation.
+  const previewHero = el('h2', { class: 'hero__word brand-preview__word' });
+  function playPreview() {
+    const name = (nameInput.value.trim() || state.appName || 'ProtoEngine');
+    let anim = animSelect.value;
+    const list = (state.heroAnimations && state.heroAnimations.length) ? state.heroAnimations : ['rise'];
+    if (anim === 'random') anim = list[Math.floor(Math.random() * list.length)];
+    previewHero.className = 'hero__word brand-preview__word hero--anim-' + anim;
+    previewHero.innerHTML = '';
+    [...name].forEach((ch, i) => {
+      const span = el('span', { style: `--i:${i}` });
+      span.textContent = ch === ' ' ? '\u00A0' : ch;
+      previewHero.append(span);
+    });
+  }
+  const previewBtn = el('button', { type: 'button', class: 'btn btn--ghost btn--small' }, 'Replay');
+  previewBtn.addEventListener('click', playPreview);
+  animSelect.addEventListener('change', playPreview);
+  nameInput.addEventListener('input', () => { /* keep preview text current */ });
+  const previewBox = el('div', { class: 'brand-preview' }, previewHero);
+
+  const msg = el('div', { class: 'formmsg' });
+  const saveBtn = el('button', { type: 'button', class: 'btn btn--primary' }, 'Save branding');
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true; msg.textContent = '';
+    const taglines = taglinesArea.value.split('\n').map((t) => t.trim()).filter(Boolean);
+    try {
+      const d = await api('/admin/settings', { method: 'PATCH', body: {
+        appName: nameInput.value, tabTitle: titleInput.value, taglines, heroAnimation: animSelect.value,
+      } });
+      const ns = d.settings;
+      state.appName = ns.appName;
+      state.heroAnimation = ns.heroAnimation;
+      buildHero();
+      document.title = ns.tabTitle;
+      msg.className = 'formmsg formmsg--ok';
+      msg.textContent = 'Branding saved.';
+    } catch (e) {
+      msg.className = 'formmsg formmsg--error'; msg.textContent = e.message;
+    } finally { saveBtn.disabled = false; }
+  });
+
+  content.append(
+    el('div', { class: 'field' }, el('label', {}, 'Brand name'),
+      el('div', { class: 'field__hint', style: 'margin-bottom:6px' }, 'Shown in the header and hero. Max 40 characters.'),
+      nameInput),
+    el('div', { class: 'field' }, el('label', {}, 'Browser tab title'),
+      el('div', { class: 'field__hint', style: 'margin-bottom:6px' }, 'The page title shown in the browser tab.'),
+      titleInput),
+    el('div', { class: 'field' }, el('label', {}, 'Taglines'),
+      el('div', { class: 'field__hint', style: 'margin-bottom:6px' }, 'One per line. A random tagline shows under the hero each load.'),
+      taglinesArea),
+    el('div', { class: 'field' }, el('label', {}, 'Hero animation'),
+      el('div', { class: 'field__hint', style: 'margin-bottom:6px' }, 'Entrance animation for the brand hero. Tap Replay to preview.'),
+      el('div', { style: 'display:flex;gap:8px;align-items:center' }, animSelect, previewBtn),
+      previewBox),
+    msg,
+    saveBtn,
+  );
+  playPreview();
 }
 
 // Render the RSS feeds management tab.
@@ -1314,34 +1505,6 @@ async function renderRssTab(panel) {
 }
 
 // ---------- admin panel ----------
-async function openAdminPanel() {
-  const body = el('div', {});
-  const tabs = el('div', { class: 'tabs' });
-  const content = el('div', { class: 'modal__body', style: 'padding-top:16px' });
-
-  const tabUsers = el('button', { class: 'tab tab--active' }, 'Users');
-  const tabSites = el('button', { class: 'tab' }, 'Listings');
-  const tabBackup = el('button', { class: 'tab' }, 'Backup');
-  tabs.append(tabUsers, tabSites, tabBackup);
-
-  tabUsers.onclick = () => { setActive(tabUsers); renderUsersTab(content); };
-  tabSites.onclick = () => { setActive(tabSites); renderSitesTab(content); };
-  tabBackup.onclick = () => { setActive(tabBackup); renderBackupTab(content); };
-  function setActive(t) {
-    [tabUsers, tabSites, tabBackup].forEach((x) => x.classList.toggle('tab--active', x === t));
-  }
-
-  body.append(tabs, content);
-  const shell = el('div', { class: 'modal modal--wide' },
-    el('div', { class: 'modal__head' },
-      el('h2', { class: 'modal__title' }, 'Admin panel'),
-      el('button', { class: 'modal__close', onclick: closeModal }, '×')),
-    body,
-  );
-  openModal(shell);
-  renderUsersTab(content);
-}
-
 async function renderUsersTab(content) {
   content.innerHTML = '';
   content.append(el('div', { class: 'placeholder' }, 'Loading users…'));
@@ -1398,7 +1561,8 @@ function adminEditUser(u, content) {
     try {
       await api('/admin/users/' + u.id, { method: 'PATCH', body });
       toast('User updated.');
-      openAdminPanel();
+      closeModal();
+      renderUsersTab(content);
     } catch (err) { msg.className = 'formmsg formmsg--error'; msg.textContent = err.message; submit.disabled = false; }
   });
   openModal(modalShell('Edit user', form));
@@ -1497,7 +1661,7 @@ async function downloadSnapshot(btn) {
     // Pull the filename from Content-Disposition, fall back to a dated name.
     const cd = r.headers.get('Content-Disposition') || '';
     const m = cd.match(/filename="([^"]+)"/);
-    const name = m ? m[1] : `lumen-snapshot-${new Date().toISOString().slice(0, 10)}.zip`;
+    const name = m ? m[1] : `protoengine-snapshot-${new Date().toISOString().slice(0, 10)}.zip`;
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
     const a = el('a', { href: url, download: name });
@@ -1536,7 +1700,6 @@ function syncChrome() {
   $('#addBtn').hidden = !signedIn;
   $('#userMenu').hidden = !signedIn;
   $('#signinBtn').hidden = signedIn;
-  $('#adminBtn').hidden = !(signedIn && state.user.role === 'admin');
   if (signedIn) {
     const av = $('#avatar');
     av.innerHTML = '';
@@ -1778,10 +1941,6 @@ function init() {
   document.addEventListener('click', (e) => {
     if (!e.target.closest('.result__menu')) closeAllResultMenus();
   });
-  $('#adminBtn').addEventListener('click', () => {
-    $('#userMenuDropdown').hidden = true;
-    openAdminPanel();
-  });
 
   // Brand/logo returns to the home view without a full page reload. Both the
   // top-bar brand and the colorful hero logo trigger it (the hero is the only
@@ -1825,7 +1984,7 @@ function init() {
   });
   document.addEventListener('click', () => { dd.hidden = true; trigger.setAttribute('aria-expanded', 'false'); });
   dd.addEventListener('click', (e) => e.stopPropagation());
-  $('#accountBtn').addEventListener('click', () => { dd.hidden = true; openAccountModal(); });
+  $('#accountBtn').addEventListener('click', () => { dd.hidden = true; openSettingsPage(); });
   $('#logoutBtn').addEventListener('click', async () => {
     try { await api('/auth/logout', { method: 'POST' }); } catch {}
     state.user = null; state.csrf = null;
@@ -1840,6 +1999,13 @@ function buildHero() {
   const h = $('#heroWord');
   if (!h) return;
   h.setAttribute('aria-label', state.appName);
+  // Apply the chosen hero animation (random picks one per page load).
+  const all = state.heroAnimations && state.heroAnimations.length
+    ? state.heroAnimations
+    : ['rise'];
+  let anim = state.heroAnimation;
+  if (!anim || anim === 'random') anim = all[Math.floor(Math.random() * all.length)];
+  h.className = 'hero__word hero--anim-' + anim;
   h.innerHTML = '';
   [...state.appName].forEach((ch, i) => {
     const span = el('span', { style: `--i:${i}` });
@@ -1866,6 +2032,8 @@ async function bootstrap() {
   try {
     const cfg = await api('/config');
     if (cfg.appName) state.appName = cfg.appName;
+    state.heroAnimation = cfg.heroAnimation || 'random';
+    state.heroAnimations = Array.isArray(cfg.heroAnimations) ? cfg.heroAnimations : [];
     if (Array.isArray(cfg.taglines) && cfg.taglines.length) {
       const tag = cfg.taglines[Math.floor(Math.random() * cfg.taglines.length)];
       const tagEl = $('#heroTag');
@@ -1881,6 +2049,11 @@ async function bootstrap() {
   syncInputToState();   // populate query/tag/page + input box from the URL
   loadSites();
   loadRssSettings();    // fetch refresh interval and arm the auto-refresh
+  // If loaded directly at /settings, open the settings page (requires login).
+  if (window.location.pathname === '/settings') {
+    if (state.user) openSettingsPage();
+    else history.replaceState(null, '', '/');
+  }
 }
 
 init();
