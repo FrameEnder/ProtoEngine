@@ -290,6 +290,7 @@ router.post('/import', handleZipUpload, async (req, res) => {
   }
 
   try {
+    console.log(`[import] writing ${iconsToWrite.length} icons + ${cleanSites.length} listings…`);
     // 1. Clear and rewrite icons directory (preserve dotfiles like .gitkeep).
     if (fs.existsSync(paths.ICONS_DIR)) {
       for (const name of fs.readdirSync(paths.ICONS_DIR)) {
@@ -311,8 +312,10 @@ router.post('/import', handleZipUpload, async (req, res) => {
       settings.write({ taglines: importedTaglines });
     }
 
+    console.log(`[import] done: ${cleanSites.length} listings, ${iconsToWrite.length} icons.`);
     res.json({ ok: true, siteCount: cleanSites.length, iconCount: iconsToWrite.length });
   } catch (e) {
+    console.error('[import] failed:', e && e.message ? e.message : e);
     res.status(500).json({ error: 'Import failed while writing data. Some data may be partially restored.' });
   }
 });
