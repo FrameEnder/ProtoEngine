@@ -2,7 +2,7 @@
 
 ![](meta/main.svg)
 
-*Index your bookmarks and find them again from one clean, customizable search page.*
+*Index your bookmarks and find them again from one clean, customizable search page... it's your Intranet after-all.*
 
 </div>
 
