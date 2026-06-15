@@ -28,21 +28,10 @@ const PORT = process.env.PORT || 3000;
 // typically via a reverse proxy. Defaults off so http access works.
 const SECURE_COOKIES = process.env.SECURE_COOKIES === 'true';
 
-// ---- Branding & site settings (admin-editable, persisted) ----
-// Logic lives in data-store.js (settings store). We migrate a legacy
-// data/tagline.json into settings.json on first run, then read fresh per
-// request so admin edits apply without a restart.
-const SETTINGS_FILE = path.join(__dirname, 'data', 'settings.json');
-const TAGLINE_FILE = path.join(__dirname, 'data', 'tagline.json');
-(function migrate() {
-  if (fs.existsSync(SETTINGS_FILE)) return;
-  let taglines;
-  try {
-    if (fs.existsSync(TAGLINE_FILE)) taglines = JSON.parse(fs.readFileSync(TAGLINE_FILE, 'utf8'));
-  } catch { /* ignore */ }
-  settings.write(taglines ? { taglines } : {});
-})();
-
+// ---- Branding & site settings ----
+// All settings logic and the one-time JSON->SQLite migration now live in
+// data-store.js. Branding is read fresh per request so admin edits apply
+// without a restart.
 function loadTaglines() { return settings.read().taglines; }
 
 // Secrets: read from env, or generate ephemeral ones (with a warning).
