@@ -2,9 +2,14 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Install dependencies first for better layer caching.
+# Build toolchain needed to compile better-sqlite3's native addon on Alpine
+# (musl). python3/make/g++ are required by node-gyp. We install them, build,
+# then drop them in the same layer to keep the image small.
 COPY package.json package-lock.json* ./
-RUN npm install --omit=dev --no-audit --no-fund
+RUN apk add --no-cache --virtual .build-deps python3 make g++ \
+  && npm install --omit=dev --no-audit --no-fund \
+  && npm rebuild better-sqlite3 \
+  && apk del .build-deps
 
 COPY . .
 
