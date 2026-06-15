@@ -1,0 +1,19 @@
+# Don't copy host build artifacts into the image. The image compiles
+# better-sqlite3 for its own platform during `npm install`; a host node_modules
+# (built for a different OS/arch) would overwrite it and break the native addon.
+node_modules
+npm-debug.log
+
+# Local data must never be baked into the image — it's provided via volumes.
+data
+public/icons/*
+public/avatars/*
+public/backgrounds/*
+!public/icons/.gitkeep
+!public/avatars/.gitkeep
+!public/backgrounds/.gitkeep
+
+# Misc
+.git
+*.tar.gz
+*.md
