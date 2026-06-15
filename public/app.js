@@ -1793,9 +1793,16 @@ async function importSnapshot(fileInput, btn) {
     const fd = new FormData();
     fd.set('snapshot', file);
     const d = await api('/admin/import', { method: 'POST', form: fd });
-    toast(`Imported ${d.siteCount} listing${d.siteCount === 1 ? '' : 's'}.`);
-    closeModal();
+    const n = d.siteCount;
+    toast(`Imported ${n} listing${n === 1 ? '' : 's'}.`);
+    // In-place success feedback: clear the chosen file, reset the button to a
+    // confirmation state, and refresh the data behind the settings page.
+    fileInput.value = '';
+    btn.textContent = `Imported ${n} listing${n === 1 ? '' : 's'} ✓`;
+    btn.disabled = true; // nothing selected now, so keep it disabled
+    setTimeout(() => { btn.textContent = original; }, 4000);
     loadSites();
+    loadRssSettings();
   } catch (e) {
     toast(e.message, true);
     btn.disabled = false; btn.textContent = original;
