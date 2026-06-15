@@ -1,33 +1,10 @@
 <div align="center">
 
-# 🔎 ProtoEngine
+![](meta/main.svg)
 
-### A self-hosted, dark-mode search engine for your group's corner of the web.
-
-*Index the sites your people actually use — and find them in one clean, fast search.*
+*Index the your bookmarks — and find them in one clean customizable Search Engine.*
 
 </div>
-
----
-
-ProtoEngine is a small, self-contained web app for building a private,
-searchable directory of websites. Add the links your team, guild, family, or
-community relies on, tag them, and search across everything from one tidy
-dark-mode page. It runs as a single container, stores everything in one SQLite
-file, and needs no external services.
-
-```
-┌─────────────────────────────────────────────┐
-│                                               │
-│                ProtoEngine                    │
-│       ╭───────────────────────────────╮       │
-│       │  🔍  search your sites…       │       │
-│       ╰───────────────────────────────╯       │
-│                                               │
-│   Search the sites your people actually use.  │
-│                                               │
-└─────────────────────────────────────────────┘
-```
 
 ---
 
