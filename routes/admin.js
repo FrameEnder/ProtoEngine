@@ -6,7 +6,7 @@ import multer from 'multer';
 import AdmZip from 'adm-zip';
 import { db, paths, settings, HERO_ANIMATIONS } from '../data-store.js';
 import { requireRole, ROLES, RANK } from '../middleware/auth.js';
-import { validUsername, validPassword } from '../util.js';
+import { validUsername, validPassword, sanitizeThemeColors } from '../util.js';
 
 const router = express.Router();
 
@@ -57,6 +57,8 @@ router.patch('/settings', async (req, res) => {
   if (typeof b.tabTitle === 'string') patch.tabTitle = b.tabTitle;
   if (Array.isArray(b.taglines)) patch.taglines = b.taglines;
   if (typeof b.heroAnimation === 'string') patch.heroAnimation = b.heroAnimation;
+  if (['dark', 'light', 'custom'].includes(b.defaultTheme)) patch.defaultTheme = b.defaultTheme;
+  if (b.defaultThemeColors !== undefined) patch.defaultThemeColors = sanitizeThemeColors(b.defaultThemeColors);
   const next = settings.write(patch);
   res.json({ settings: next });
 });
