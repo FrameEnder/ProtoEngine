@@ -829,7 +829,7 @@ body.has-bg .activefilter {
   display: grid; place-items: center; flex: none;
   width: 20px; height: 20px; padding: 0;
   border: none; background: none;
-  color: var(--text-faint); cursor: pointer;
+  color: var(--icon); cursor: pointer;
   transition: color 0.15s;
 }
 .rsspanel__refresh:hover { color: var(--text); }
@@ -956,18 +956,18 @@ body.has-bg .rsscard { background: rgba(var(--glass), 0.55); backdrop-filter: bl
 }
 .favpanel__head {
   font-size: 12px; font-weight: 700; letter-spacing: 0.04em;
-  text-transform: uppercase; color: var(--text-faint);
+  text-transform: uppercase; color: var(--text);
   padding: 2px 4px 10px;
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
 }
 .favpanel__actions { display: flex; align-items: center; gap: 2px; }
 .favpanel__btn {
   display: grid; place-items: center; width: 26px; height: 26px;
-  border-radius: 7px; border: none; background: none; color: var(--text-faint);
+  border-radius: 7px; border: none; background: none; color: var(--icon);
   cursor: pointer; transition: background 0.15s, color 0.15s;
 }
-.favpanel__btn:hover { background: var(--surface-hover); color: var(--text); }
-.favpanel__btn--active { color: var(--blue); }
+.favpanel__btn:hover { background: var(--surface-hover); color: var(--text-hover); }
+.favpanel__btn--active { color: var(--icon); background: var(--surface-hover); }
 .favpanel__btn svg { display: block; }
 .favgrid {
   display: grid;
@@ -1002,7 +1002,7 @@ body.has-bg .rsscard { background: rgba(var(--glass), 0.55); backdrop-filter: bl
 /* The name lives in a fixed-width viewport; long names marquee on hover so
    they never widen the square tile. */
 .favtile__name {
-  font-size: 11px; line-height: 1.2;
+  font-size: 11px; line-height: 1.2; color: var(--text);
   width: 100%; max-width: 100%; overflow: hidden;
   white-space: nowrap; text-align: center;
 }
