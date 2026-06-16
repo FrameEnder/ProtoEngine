@@ -24,7 +24,7 @@
 ## What it does
 
 ProtoEngine is a self-hosted search page for the websites you actually use. 
-Add links, tag them, and search across everything from one dark, customizable page. 
+Add links, tag them, and search across everything from a completely, customizable webapp. 
 It runs as a single container and keeps all its data in one SQLite file, so 
 there's nothing else to set up.
 
