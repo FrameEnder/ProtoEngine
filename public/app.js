@@ -16,6 +16,34 @@ const el = (tag, props = {}, ...kids) => {
 };
 const esc = (s) => String(s ?? '');
 
+// Wrap a native <input type="file"> in a themed button. The native input is
+// visually hidden (but still functional/accessible); a styled label triggers
+// it and a sibling shows the chosen filename. Returns the wrapper element.
+// `opts.label` sets the button text; `opts.variant` picks the btn style.
+function fileButton(input, opts = {}) {
+  input.classList.add('filepick__input');
+  const label = opts.label || 'Choose file';
+  const name = el('span', { class: 'filepick__name' }, 'No file chosen');
+  const btn = el('span', { class: 'btn ' + (opts.variant || 'btn--ghost') + ' btn--small filepick__btn' }, label);
+  input.addEventListener('change', () => {
+    const f = input.files && input.files[0];
+    name.textContent = f ? f.name : 'No file chosen';
+  });
+  // Keep the filename label in sync when code clears the input (input.value='').
+  const proto = Object.getPrototypeOf(input);
+  const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+  if (desc && desc.set) {
+    Object.defineProperty(input, 'value', {
+      get() { return desc.get.call(this); },
+      set(v) { desc.set.call(this, v); if (!v) name.textContent = 'No file chosen'; },
+    });
+  }
+  // Clicking the styled button forwards to the hidden input.
+  btn.addEventListener('click', () => input.click());
+  // The <label> association also lets the filename reset when input.value=''.
+  return el('div', { class: 'filepick' }, input, btn, name);
+}
+
 // ---------- state ----------
 const state = {
   user: null,
@@ -109,6 +137,157 @@ function canManage(site) {
 // ---------- favorites ----------
 function isFavorite(id) {
   return !!(state.user && Array.isArray(state.user.favorites) && state.user.favorites.includes(id));
+}
+
+// ---------- Theme engine ----------
+// The customizable color keys. `var` is the CSS custom property each maps to.
+// Grouped for a tidy editor. Keep keys in sync with util.js THEME_COLOR_KEYS.
+const THEME_COLORS = [
+  { key: 'bg',           label: 'Background',                 cssVar: '--bg' },
+  { key: 'topbar',       label: 'Top bar',                    cssVar: '--topbar' },
+  { key: 'btnBg',        label: 'Button background',          cssVar: '--btn-bg' },
+  { key: 'surface',      label: 'Panels',                     cssVar: '--surface' },
+  { key: 'searchbar',    label: 'Search bar',                 cssVar: '--searchbar' },
+  { key: 'border',       label: 'Borders',                    cssVar: '--border' },
+  { key: 'text',         label: 'Text',                       cssVar: '--text' },
+  { key: 'textHover',    label: 'Hovered text',               cssVar: '--text-hover' },
+  { key: 'subtext',      label: 'Hero subtext / dim text',    cssVar: '--text-dim' },
+  { key: 'btnHover',     label: 'Hovered button',             cssVar: '--surface-hover' },
+  { key: 'btnClick',     label: 'Clicked button',             cssVar: '--blue-press' },
+  { key: 'btnClickText', label: 'Clicked button text',        cssVar: '--btn-text' },
+  { key: 'searchBtn',    label: 'Search button',              cssVar: '--search-btn' },
+  { key: 'icon',         label: 'Icons',                      cssVar: '--icon' },
+  { key: 'glass',        label: 'Frosted glass hue',          cssVar: '--glass', isGlass: true },
+  { key: 'brandFirst',   label: 'Corner logo — first letter', cssVar: '--brand-first' },
+  { key: 'brandRest',    label: 'Corner logo — the rest',     cssVar: '--brand-rest' },
+  { key: 'hero1',        label: 'Hero array — color 1',       cssVar: '--blue' },
+  { key: 'hero2',        label: 'Hero array — color 2',       cssVar: '--red' },
+  { key: 'hero3',        label: 'Hero array — color 3',       cssVar: '--amber' },
+  { key: 'hero4',        label: 'Hero array — color 4',       cssVar: '--green' },
+  { key: 'starOn',       label: 'Favorite star — selected',   cssVar: '--star-on' },
+  { key: 'starOff',      label: 'Favorite star — unselected', cssVar: '--star-off' },
+  { key: 'link',         label: 'Links',                      cssVar: '--link' },
+];
+const THEME_BY_KEY = Object.fromEntries(THEME_COLORS.map((c) => [c.key, c]));
+
+function hexToRgbTriplet(hex) {
+  let h = hex.replace('#', '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  const n = parseInt(h.slice(0, 6), 16);
+  return `${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}`;
+}
+
+// Mix a hex color toward white (amt>0) or black (amt<0) by a 0..1 fraction.
+// Used to derive secondary tokens (hover/dim) from a chosen base color so the
+// whole UI themes consistently without needing a picker for every shade.
+function shadeHex(hex, amt) {
+  let h = hex.replace('#', '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  const n = parseInt(h.slice(0, 6), 16);
+  let [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const t = amt < 0 ? 0 : 255, p = Math.abs(amt);
+  r = Math.round(r + (t - r) * p);
+  g = Math.round(g + (t - g) * p);
+  b = Math.round(b + (t - b) * p);
+  return '#' + [r, g, b].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+// Perceived luminance 0..1 (to decide whether to lighten or darken).
+function luminance(hex) {
+  let h = hex.replace('#', '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  const n = parseInt(h.slice(0, 6), 16);
+  return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+}
+// Blend hex a toward hex b by fraction t (0..1).
+function mixHex(a, b, t) {
+  const pa = a.replace('#', ''), pb = b.replace('#', '');
+  const na = parseInt(pa.length === 3 ? pa.split('').map((c) => c + c).join('') : pa, 16);
+  const nb = parseInt(pb.length === 3 ? pb.split('').map((c) => c + c).join('') : pb, 16);
+  const r = Math.round(((na >> 16) & 255) + (((nb >> 16) & 255) - ((na >> 16) & 255)) * t);
+  const g = Math.round(((na >> 8) & 255) + (((nb >> 8) & 255) - ((na >> 8) & 255)) * t);
+  const bl = Math.round((na & 255) + ((nb & 255) - (na & 255)) * t);
+  return '#' + [r, g, bl].map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+// Apply a theme to the page. mode: 'dark' | 'light' | 'custom'.
+// For custom, `colors` is a { key: hex } map applied as inline CSS variables.
+// Two special keys ride along: _hazeOn ('1'/'0') and _hazeColor (hex) control
+// the background-image haze overlay.
+function applyTheme(mode, colors) {
+  const root = document.documentElement;
+  // Clear any previous custom overrides first.
+  for (const c of THEME_COLORS) root.style.removeProperty(c.cssVar);
+  for (const v of ['--haze', '--haze-a', '--surface-2', '--surface-hover', '--text-dim', '--text-faint', '--bg-rgb']) {
+    root.style.removeProperty(v);
+  }
+  if (mode === 'light') {
+    root.setAttribute('data-theme', 'light');
+  } else if (mode === 'custom') {
+    // Custom builds on the dark base, then applies the user's overrides.
+    root.setAttribute('data-theme', 'dark');
+    const c = colors || {};
+    for (const def of THEME_COLORS) {
+      const val = c[def.key];
+      if (!val) continue;
+      root.style.setProperty(def.cssVar, def.isGlass ? hexToRgbTriplet(val) : val);
+    }
+    // Derive secondary tokens so every box/text themes consistently without a
+    // separate picker for each shade. Only derive when the base was chosen.
+    if (c.surface) {
+      const lift = luminance(c.surface) < 0.5 ? 1 : -1;  // lighten dark, darken light
+      root.style.setProperty('--surface-2', shadeHex(c.surface, lift * 0.06));
+      root.style.setProperty('--surface-hover', shadeHex(c.surface, lift * 0.12));
+    }
+    if (c.text) {
+      // Dim/faint text = the chosen text color pulled toward the background.
+      const toward = c.bg || (luminance(c.text) > 0.5 ? '#000000' : '#ffffff');
+      root.style.setProperty('--text-dim', mixHex(c.text, toward, 0.35));
+      root.style.setProperty('--text-faint', mixHex(c.text, toward, 0.55));
+    }
+    if (c.bg) root.style.setProperty('--bg-rgb', hexToRgbTriplet(c.bg));
+    // Background haze: only when explicitly enabled. Off = no overlay.
+    if (c._hazeOn === '1') {
+      const hazeHex = c._hazeColor || '#ffffff';
+      root.style.setProperty('--haze', hexToRgbTriplet(hazeHex));
+      root.style.setProperty('--haze-a', '0.5');
+    } else {
+      root.style.setProperty('--haze-a', '0');
+    }
+  } else {
+    root.setAttribute('data-theme', 'dark');
+  }
+}
+
+// Resolve which theme to show: the signed-in user's choice, else admin default.
+function applyThemeFromState() {
+  const mode = (state.user && state.user.theme) || state.defaultTheme || 'dark';
+  const colors = (state.user && state.user.theme === 'custom')
+    ? (state.user.themeColors || {})
+    : (mode === 'custom' ? (state.defaultThemeColors || {}) : {});
+  applyTheme(mode, colors);
+}
+
+// Read the effective current value of a theme var (for seeding color inputs).
+function currentThemeValue(def) {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(def.cssVar).trim();
+  if (def.isGlass) {
+    // Convert "r, g, b" back to hex for the color input.
+    const m = v.match(/(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    if (m) return '#' + [m[1], m[2], m[3]].map((n) => (+n).toString(16).padStart(2, '0')).join('');
+    return '#1b1d22';
+  }
+  // Resolve var() chains to a concrete color by reading from a probe element.
+  if (v.startsWith('var(') || !v) {
+    const probe = document.createElement('span');
+    probe.style.color = `var(${def.cssVar})`;
+    document.body.appendChild(probe);
+    const rgb = getComputedStyle(probe).color;
+    probe.remove();
+    const m = rgb.match(/(\d+),\s*(\d+),\s*(\d+)/);
+    if (m) return '#' + [m[1], m[2], m[3]].map((n) => (+n).toString(16).padStart(2, '0')).join('');
+    return '#888888';
+  }
+  return v;
 }
 
 function starSvg(filled) {
@@ -972,7 +1151,7 @@ function openSiteModal(site = null) {
 
   const iconRow = el('div', { class: 'iconpick' }, preview,
     el('div', {},
-      iconInput,
+      fileButton(iconInput, { label: 'Choose icon' }),
       editing && site.icon
         ? el('button', { type: 'button', class: 'minibtn', style: 'margin-top:8px', onclick: () => {
             removeExistingIcon = true; iconInput.value = ''; paintPreview(null, 'removed');
@@ -1071,7 +1250,7 @@ function openSettingsPage() {
     avatarPreview,
     el('div', {},
       el('div', { class: 'field__hint', style: 'margin-bottom:8px' }, 'PNG, JPG, GIF, or WEBP. Max 1 MB.'),
-      avatarFile,
+      fileButton(avatarFile, { label: 'Choose image' }),
       el('div', { style: 'margin-top:8px' }, removeAvatarBtn),
     )
   );
@@ -1108,7 +1287,7 @@ function openSettingsPage() {
     bgPreview,
     el('div', {},
       el('div', { class: 'field__hint', style: 'margin-bottom:8px' }, 'Shown behind the page, with results on a frosted-glass panel. PNG, JPG, GIF, or WEBP. Max 6 MB.'),
-      bgFile,
+      fileButton(bgFile, { label: 'Choose image' }),
       el('div', { style: 'margin-top:8px' }, removeBgBtn),
     )
   );
@@ -1209,6 +1388,9 @@ function openSettingsPage() {
     form,
   );
   const panelCustomization = el('div', {},
+    el('div', { class: 'account__sectionlabel' }, 'Theme'),
+    buildThemeSection(),
+    el('hr', { class: 'account__rule' }),
     el('div', { class: 'account__sectionlabel' }, 'Background image'),
     bgSection,
   );
@@ -1271,12 +1453,426 @@ function closeSettingsPage() {
   const page = $('#settingsPage');
   if (page) { page.hidden = true; page.innerHTML = ''; }
   document.body.classList.remove('settings-open');
+  // Drop any unsaved live theme preview by re-applying the saved theme.
+  applyThemeFromState();
   if (window.location.pathname === '/settings') {
     history.replaceState(null, '', '/');
   }
 }
 
 // Render the admin panel (users / listings / backup) into a settings panel.
+// Build the Theme section for the Customization tab: Dark / Light / Custom
+// selector, a collapsible color editor (live preview, persists on Save), and
+// named presets.
+// ---------- Custom color popup picker ----------
+// A self-contained HSV picker: saturation/value square, hue slider, hex field,
+// and a recent-colors strip — all in one popup we fully control.
+let _openColorPop = null;
+function closeColorPicker() {
+  if (_openColorPop) {
+    if (_openColorPop._cleanup) _openColorPop._cleanup();
+    _openColorPop.remove();
+    _openColorPop = null;
+  }
+}
+function hsvToRgb(h, s, v) {
+  const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) [r, g, b] = [c, x, 0];
+  else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x];
+  else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return [r, g, b].map((n) => Math.round((n + m) * 255));
+}
+function rgbToHsv(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min;
+  let h = 0;
+  if (d) {
+    if (max === r) h = ((g - b) / d) % 6;
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60; if (h < 0) h += 360;
+  }
+  return [h, max ? d / max : 0, max];
+}
+function hexToRgb(hex) {
+  let h = hex.replace('#', '');
+  if (h.length === 3) h = h.split('').map((c) => c + c).join('');
+  const n = parseInt(h, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+function rgbToHex(r, g, b) {
+  return '#' + [r, g, b].map((n) => Math.max(0, Math.min(255, n)).toString(16).padStart(2, '0')).join('');
+}
+
+// Build the popup. `onChange(hex)` fires live as the user adjusts.
+function buildColorPopup(startHex, recents, onChange) {
+  const pop = el('div', {});
+  let [h, s, v] = rgbToHsv(...hexToRgb(startHex));
+
+  const area = el('div', { class: 'cpick__area' });
+  const areaCursor = el('div', { class: 'cpick__cursor' });
+  area.append(areaCursor);
+  const hue = el('div', { class: 'cpick__hue' });
+  const hueCursor = el('div', { class: 'cpick__huecursor' });
+  hue.append(hueCursor);
+  const hexField = el('input', { type: 'text', class: 'cpick__hex', maxlength: '7', spellcheck: 'false' });
+  const rField = el('input', { type: 'number', class: 'cpick__rgb', min: '0', max: '255', step: '1' });
+  const gField = el('input', { type: 'number', class: 'cpick__rgb', min: '0', max: '255', step: '1' });
+  const bField = el('input', { type: 'number', class: 'cpick__rgb', min: '0', max: '255', step: '1' });
+  const recentRow = el('div', { class: 'cpick__recent' });
+
+  function currentHex() { return rgbToHex(...hsvToRgb(h, s, v)); }
+  function paint() {
+    const hueRgb = rgbToHex(...hsvToRgb(h, 1, 1));
+    area.style.background =
+      `linear-gradient(to top, #000, transparent), linear-gradient(to right, #fff, ${hueRgb})`;
+    areaCursor.style.left = (s * 100) + '%';
+    areaCursor.style.top = ((1 - v) * 100) + '%';
+    hueCursor.style.top = ((h / 360) * 100) + '%';
+    const hex = currentHex();
+    areaCursor.style.background = hex;
+    hexField.value = hex;
+    const [r, g, b] = hsvToRgb(h, s, v);
+    // Don't clobber a field the user is mid-edit in.
+    if (document.activeElement !== rField) rField.value = r;
+    if (document.activeElement !== gField) gField.value = g;
+    if (document.activeElement !== bField) bField.value = b;
+  }
+  function emit() { onChange(currentHex()); }
+
+  // Saturation/value drag.
+  function areaFromEvent(e) {
+    const r = area.getBoundingClientRect();
+    const px = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+    const py = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    s = px; v = 1 - py; paint(); emit();
+  }
+  area.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); area.setPointerCapture(e.pointerId); areaFromEvent(e);
+    const mv = (ev) => areaFromEvent(ev);
+    const up = () => { area.removeEventListener('pointermove', mv); area.removeEventListener('pointerup', up); };
+    area.addEventListener('pointermove', mv); area.addEventListener('pointerup', up);
+  });
+  // Hue drag.
+  function hueFromEvent(e) {
+    const r = hue.getBoundingClientRect();
+    const py = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+    h = py * 360; paint(); emit();
+  }
+  hue.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); hue.setPointerCapture(e.pointerId); hueFromEvent(e);
+    const mv = (ev) => hueFromEvent(ev);
+    const up = () => { hue.removeEventListener('pointermove', mv); hue.removeEventListener('pointerup', up); };
+    hue.addEventListener('pointermove', mv); hue.addEventListener('pointerup', up);
+  });
+  // Hex entry.
+  function commit() {
+    let val = hexField.value.trim().replace(/^#?/, '#');
+    if (/^#[0-9a-fA-F]{3}$/.test(val)) val = '#' + val.slice(1).split('').map((c) => c + c).join('');
+    if (/^#[0-9a-fA-F]{6}$/.test(val)) { [h, s, v] = rgbToHsv(...hexToRgb(val)); paint(); emit(); }
+    else hexField.value = currentHex();
+  }
+  hexField.addEventListener('change', commit);
+  hexField.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commit(); } });
+
+  // R/G/B entry: read all three, clamp, convert to HSV. Updates live.
+  function commitRgb() {
+    const clamp = (n) => Math.max(0, Math.min(255, parseInt(n, 10) || 0));
+    const r = clamp(rField.value), g = clamp(gField.value), b = clamp(bField.value);
+    [h, s, v] = rgbToHsv(r, g, b);
+    paint(); emit();
+  }
+  for (const f of [rField, gField, bField]) {
+    f.addEventListener('input', commitRgb);
+    f.addEventListener('change', () => { f.value = Math.max(0, Math.min(255, parseInt(f.value, 10) || 0)); });
+  }
+
+  // Recent colors strip, inside the picker.
+  recentRow.append(el('span', { class: 'cpick__recentlabel' }, 'Recent'));
+  if (!recents.length) {
+    recentRow.append(el('span', { class: 'cpick__recentempty' }, '—'));
+  } else {
+    for (const hex of recents) {
+      const dot = el('button', { type: 'button', class: 'cpick__dot', title: hex, style: `background:${hex}` });
+      dot.addEventListener('click', () => { [h, s, v] = rgbToHsv(...hexToRgb(hex)); paint(); emit(); });
+      recentRow.append(dot);
+    }
+  }
+
+  pop.append(
+    el('div', { class: 'cpick__top' }, area, hue),
+    el('div', { class: 'cpick__rgbrow' },
+      el('label', { class: 'cpick__rgbfield' }, el('span', {}, 'R'), rField),
+      el('label', { class: 'cpick__rgbfield' }, el('span', {}, 'G'), gField),
+      el('label', { class: 'cpick__rgbfield' }, el('span', {}, 'B'), bField),
+    ),
+    el('div', { class: 'cpick__hexrow' }, el('span', { class: 'cpick__hash' }, '#'), hexField),
+    recentRow,
+  );
+  paint();
+  _openColorPop = pop;
+  return pop;
+}
+
+function buildThemeSection() {
+  const wrap = el('div', {});
+  // Working copy of custom colors for live preview before saving.
+  let working = { ...(state.user.themeColors || {}) };
+  let mode = state.user.theme || state.defaultTheme || 'dark';
+
+  // --- Mode selector (segmented) ---
+  const seg = el('div', { class: 'themeseg' });
+  const modes = [['dark', 'Dark'], ['light', 'Light'], ['custom', 'Custom']];
+  const segBtns = {};
+  function setMode(m, persist) {
+    mode = m;
+    Object.entries(segBtns).forEach(([k, b]) => b.classList.toggle('themeseg__btn--active', k === m));
+    editor.classList.toggle('collapse--open', m === 'custom');
+    // Live-apply.
+    applyTheme(m, m === 'custom' ? working : {});
+    if (persist) saveTheme(m, m === 'custom' ? working : undefined);
+  }
+  for (const [m, label] of modes) {
+    const b = el('button', { type: 'button', class: 'themeseg__btn' }, label);
+    b.addEventListener('click', () => setMode(m, true));
+    segBtns[m] = b;
+    seg.append(b);
+  }
+
+  // --- Collapsible color editor ---
+  const editorBody = el('div', { class: 'collapse__body' });
+  const caret = el('span', { class: 'collapse__caret', html: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' });
+  const editorHead = el('button', { type: 'button', class: 'collapse__head' }, caret, el('span', {}, 'Theme Colors'));
+  const editor = el('div', { class: 'collapse' }, editorHead, editorBody);
+  editorHead.addEventListener('click', () => {
+    // Manual toggle is allowed, but it only makes sense in custom mode.
+    if (mode === 'custom') editor.classList.toggle('collapse--open');
+  });
+
+  // Recent colors (last 8 distinct), shown inside the custom picker.
+  let recentColors = [];
+  function pushRecent(hex) {
+    hex = (hex || '').toLowerCase();
+    if (!/^#[0-9a-f]{6}$/.test(hex)) return;
+    recentColors = [hex, ...recentColors.filter((c) => c !== hex)].slice(0, 8);
+  }
+
+  // Color rows: each shows a swatch button + hex field + label. Clicking the
+  // swatch opens a custom popup picker (spectrum + hex + recents) anchored to
+  // it — this is what lets recents live "inside" the picker.
+  const swatchEls = {};
+  const hexEls = {};
+  const grid = el('div', { class: 'themegrid' });
+  function seedInputs() {
+    for (const def of THEME_COLORS) {
+      const initial = (working[def.key] || currentThemeValue(def) || '#888888').toLowerCase();
+      if (swatchEls[def.key]) swatchEls[def.key].style.background = initial;
+      if (hexEls[def.key]) hexEls[def.key].value = initial;
+    }
+  }
+  // Set a color from any source and keep the row's swatch + hex field in sync.
+  function setColor(def, hex) {
+    hex = hex.toLowerCase();
+    working[def.key] = hex;
+    if (swatchEls[def.key]) swatchEls[def.key].style.background = hex;
+    if (hexEls[def.key]) hexEls[def.key].value = hex;
+    applyTheme('custom', working);   // live preview
+    pushRecent(hex);
+  }
+  for (const def of THEME_COLORS) {
+    const swatch = el('button', { type: 'button', class: 'themegrid__swatch', 'aria-label': 'Pick ' + def.label });
+    const hex = el('input', { type: 'text', class: 'themegrid__hex', maxlength: '7', spellcheck: 'false', placeholder: '#000000' });
+    swatch.addEventListener('click', () => openColorPicker(swatch, def));
+    function commitHex() {
+      let v = hex.value.trim().replace(/^#?/, '#');
+      if (/^#[0-9a-fA-F]{3}$/.test(v)) v = '#' + v.slice(1).split('').map((c) => c + c).join('');
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) setColor(def, v);
+      else hex.value = (working[def.key] || currentThemeValue(def) || '').toLowerCase();
+    }
+    hex.addEventListener('change', commitHex);
+    hex.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitHex(); } });
+    swatchEls[def.key] = swatch;
+    hexEls[def.key] = hex;
+    grid.append(el('div', { class: 'themegrid__row' },
+      swatch, hex, el('span', { class: 'themegrid__label' }, def.label)));
+  }
+
+  // The shared popup picker. Opens anchored to a swatch, edits that row live.
+  function openColorPicker(anchor, def) {
+    closeColorPicker();
+    const start = (working[def.key] || currentThemeValue(def) || '#888888').toLowerCase();
+    const onPick = def._setter ? def._setter : (hex) => setColor(def, hex);
+    const pop = buildColorPopup(start, recentColors, onPick);
+    pop.classList.add('colorpop');
+    document.body.append(pop);
+    // Position near the anchor, kept within the viewport.
+    const r = anchor.getBoundingClientRect();
+    const pw = 232, ph = pop.offsetHeight || 280;
+    let left = r.left;
+    let top = r.bottom + 8;
+    if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+    if (top + ph > window.innerHeight - 8) top = Math.max(8, r.top - ph - 8);
+    pop.style.left = Math.max(8, left) + 'px';
+    pop.style.top = top + 'px';
+    // Close on outside click / Escape.
+    setTimeout(() => {
+      document.addEventListener('mousedown', onDocDown, true);
+      document.addEventListener('keydown', onKey, true);
+    }, 0);
+    function onDocDown(e) { if (!pop.contains(e.target) && e.target !== anchor) closeColorPicker(); }
+    function onKey(e) { if (e.key === 'Escape') closeColorPicker(); }
+    pop._cleanup = () => {
+      document.removeEventListener('mousedown', onDocDown, true);
+      document.removeEventListener('keydown', onKey, true);
+    };
+  }
+
+  // --- Background haze (overlay over a background image) ---
+  const hazeCheck = el('input', { type: 'checkbox' });
+  if (working._hazeOn === '1') hazeCheck.checked = true;
+  const hazeSwatch = el('button', { type: 'button', class: 'themegrid__swatch', 'aria-label': 'Pick haze color' });
+  const hazeHexField = el('input', { type: 'text', class: 'themegrid__hex', maxlength: '7', spellcheck: 'false', placeholder: '#ffffff' });
+  function seedHaze() {
+    const c = (working._hazeColor || '#ffffff').toLowerCase();
+    hazeSwatch.style.background = c;
+    hazeHexField.value = c;
+    const on = hazeCheck.checked;
+    hazeSwatch.disabled = !on; hazeHexField.disabled = !on;
+    hazeRow.style.opacity = on ? '1' : '0.5';
+  }
+  function setHaze(hex) {
+    hex = hex.toLowerCase();
+    working._hazeColor = hex;
+    hazeSwatch.style.background = hex;
+    hazeHexField.value = hex;
+    applyTheme('custom', working);
+    pushRecent(hex);
+  }
+  hazeCheck.addEventListener('change', () => {
+    working._hazeOn = hazeCheck.checked ? '1' : '0';
+    if (hazeCheck.checked && !working._hazeColor) working._hazeColor = '#ffffff';
+    seedHaze();
+    applyTheme('custom', working);
+  });
+  hazeSwatch.addEventListener('click', () => openColorPicker(hazeSwatch, { key: '_hazeColor', label: 'Haze', _setter: setHaze }));
+  hazeHexField.addEventListener('change', () => {
+    let v = hazeHexField.value.trim().replace(/^#?/, '#');
+    if (/^#[0-9a-fA-F]{3}$/.test(v)) v = '#' + v.slice(1).split('').map((c) => c + c).join('');
+    if (/^#[0-9a-fA-F]{6}$/.test(v)) setHaze(v);
+    else seedHaze();
+  });
+  const hazeRow = el('div', { class: 'hazerow' },
+    el('label', { class: 'hazerow__toggle' }, hazeCheck, el('span', {}, 'Background haze')),
+    el('div', { class: 'hazerow__color' }, hazeSwatch, hazeHexField),
+  );
+
+  const msg = el('div', { class: 'formmsg' });
+  const saveBtn = el('button', { type: 'button', class: 'btn btn--primary btn--small' }, 'Save colors');
+  saveBtn.addEventListener('click', () => {
+    state.user.themeColors = { ...working };
+    saveTheme('custom', working);
+    msg.className = 'formmsg formmsg--ok'; msg.textContent = 'Theme saved.';
+  });
+  const resetBtn = el('button', { type: 'button', class: 'btn btn--ghost btn--small' }, 'Reset to base');
+  resetBtn.addEventListener('click', () => {
+    working = {};
+    applyTheme('custom', working);
+    seedInputs();
+    seedHaze();
+    msg.textContent = '';
+  });
+
+  // --- Presets ---
+  const presetList = el('div', { class: 'themepresets' });
+  function renderPresets() {
+    presetList.innerHTML = '';
+    const presets = state.user.themePresets || [];
+    if (!presets.length) {
+      presetList.append(el('div', { class: 'field__hint', style: 'margin:6px 0' }, 'No saved presets yet.'));
+      return;
+    }
+    for (const p of presets) {
+      const apply = el('button', { type: 'button', class: 'themepreset__use' }, p.name);
+      apply.addEventListener('click', () => {
+        working = { ...p.colors };
+        if (mode !== 'custom') setMode('custom', false);
+        applyTheme('custom', working);
+        seedInputs();
+        editor.classList.add('collapse--open');
+      });
+      const del = el('button', { type: 'button', class: 'themepreset__del', title: 'Delete preset', 'aria-label': 'Delete preset' }, '×');
+      del.addEventListener('click', async () => {
+        try {
+          const d = await api('/auth/theme/presets/' + p.id, { method: 'DELETE' });
+          state.user.themePresets = d.presets || [];
+          renderPresets();
+        } catch (e) { toast(e.message, true); }
+      });
+      presetList.append(el('div', { class: 'themepreset' }, apply, del));
+    }
+  }
+  const presetName = el('input', { type: 'text', placeholder: 'Preset name', maxlength: '40' });
+  const presetSave = el('button', { type: 'button', class: 'btn btn--ghost btn--small' }, 'Save as preset');
+  presetSave.addEventListener('click', async () => {
+    const name = presetName.value.trim();
+    if (!name) { toast('Enter a preset name.', true); return; }
+    try {
+      const d = await api('/auth/theme/presets', { method: 'POST', body: { name, colors: working } });
+      state.user.themePresets = d.presets || [];
+      presetName.value = '';
+      renderPresets();
+      toast('Preset saved.');
+    } catch (e) { toast(e.message, true); }
+  });
+
+  editorBody.append(
+    el('div', { class: 'field__hint', style: 'margin-bottom:10px' },
+      'Click a swatch to pick a color. Changes preview live; click “Save colors” to keep them.'),
+    grid,
+    el('hr', { class: 'account__rule' }),
+    el('div', { class: 'field__hint', style: 'margin-bottom:8px' },
+      'Background haze: a tinted overlay on your background image (like Light mode’s milky look). Toggle it on and choose any color.'),
+    hazeRow,
+    el('div', { style: 'display:flex;gap:8px;margin-top:12px' }, saveBtn, resetBtn),
+    msg,
+    el('hr', { class: 'account__rule' }),
+    el('div', { class: 'account__sectionlabel' }, 'Presets'),
+    el('div', { class: 'rssadd' }, presetName, presetSave),
+    presetList,
+  );
+
+  wrap.append(
+    el('div', { class: 'field__hint', style: 'margin-bottom:8px' }, 'Choose a theme for your account.'),
+    seg,
+    editor,
+  );
+
+  // Initialize.
+  seedInputs();
+  seedHaze();
+  renderPresets();
+  // Reflect current mode without re-persisting.
+  Object.entries(segBtns).forEach(([k, b]) => b.classList.toggle('themeseg__btn--active', k === mode));
+  editor.classList.toggle('collapse--open', mode === 'custom');
+
+  return wrap;
+}
+
+// Persist the selected theme (and colors for custom) to the account.
+async function saveTheme(mode, colors) {
+  state.user.theme = mode;
+  if (colors !== undefined) state.user.themeColors = { ...colors };
+  try {
+    const body = { theme: mode };
+    if (colors !== undefined) body.themeColors = colors;
+    await api('/auth/theme', { method: 'PATCH', body });
+  } catch (e) { toast(e.message, true); }
+}
+
 function renderAdminInto(panel) {
   panel.innerHTML = '';
   const tabs = el('div', { class: 'tabs' });
@@ -1339,6 +1935,12 @@ async function renderBrandingTab(content) {
   nameInput.addEventListener('input', () => { /* keep preview text current */ });
   const previewBox = el('div', { class: 'brand-preview' }, previewHero);
 
+  // Site default theme (users can still override their own).
+  const themeSelect = el('select', { style: 'width:100%' },
+    el('option', { value: 'dark', ...(s.defaultTheme === 'dark' ? { selected: 'selected' } : {}) }, 'Dark'),
+    el('option', { value: 'light', ...(s.defaultTheme === 'light' ? { selected: 'selected' } : {}) }, 'Light'),
+  );
+
   const msg = el('div', { class: 'formmsg' });
   const saveBtn = el('button', { type: 'button', class: 'btn btn--primary' }, 'Save branding');
   saveBtn.addEventListener('click', async () => {
@@ -1346,11 +1948,13 @@ async function renderBrandingTab(content) {
     const taglines = taglinesArea.value.split('\n').map((t) => t.trim()).filter(Boolean);
     try {
       const d = await api('/admin/settings', { method: 'PATCH', body: {
-        appName: nameInput.value, tabTitle: titleInput.value, taglines, heroAnimation: animSelect.value,
+        appName: nameInput.value, tabTitle: titleInput.value, taglines,
+        heroAnimation: animSelect.value, defaultTheme: themeSelect.value,
       } });
       const ns = d.settings;
       state.appName = ns.appName;
       state.heroAnimation = ns.heroAnimation;
+      state.defaultTheme = ns.defaultTheme;
       buildHero();
       document.title = ns.tabTitle;
       msg.className = 'formmsg formmsg--ok';
@@ -1374,6 +1978,9 @@ async function renderBrandingTab(content) {
       el('div', { class: 'field__hint', style: 'margin-bottom:6px' }, 'Entrance animation for the brand hero. Tap Replay to preview.'),
       el('div', { style: 'display:flex;gap:8px;align-items:center' }, animSelect, previewBtn),
       previewBox),
+    el('div', { class: 'field' }, el('label', {}, 'Default theme'),
+      el('div', { class: 'field__hint', style: 'margin-bottom:6px' }, 'The theme new visitors see. Each account can override it in Customization.'),
+      themeSelect),
     msg,
     saveBtn,
   );
@@ -1749,7 +2356,7 @@ function renderBackupTab(content) {
     el('div', { class: 'backup__title' }, 'Import'),
     el('p', { class: 'backup__desc' },
       'Restore from a snapshot. This clears all current listings, taglines, and favicons and replaces them with the contents of the .zip. Accounts are not affected. This cannot be undone — export a snapshot first if unsure.'),
-    el('div', { class: 'field', style: 'margin:10px 0 12px' }, fileInput),
+    el('div', { class: 'field', style: 'margin:10px 0 12px' }, fileButton(fileInput, { label: 'Choose .zip' })),
     importBtn,
   );
 
@@ -2209,17 +2816,21 @@ async function bootstrap() {
     if (cfg.appName) state.appName = cfg.appName;
     state.heroAnimation = cfg.heroAnimation || 'random';
     state.heroAnimations = Array.isArray(cfg.heroAnimations) ? cfg.heroAnimations : [];
+    state.defaultTheme = ['dark', 'light', 'custom'].includes(cfg.defaultTheme) ? cfg.defaultTheme : 'dark';
+    state.defaultThemeColors = (cfg.defaultThemeColors && typeof cfg.defaultThemeColors === 'object') ? cfg.defaultThemeColors : {};
     if (Array.isArray(cfg.taglines) && cfg.taglines.length) {
       const tag = cfg.taglines[Math.floor(Math.random() * cfg.taglines.length)];
       const tagEl = $('#heroTag');
       if (tagEl) tagEl.textContent = tag;
     }
   } catch {}
+  applyThemeFromState();   // admin default until we know the user's preference
   buildHero();
   try {
     const d = await api('/auth/me');
     state.user = d.user;
   } catch {}
+  applyThemeFromState();   // now apply the user's own theme if they have one
   syncChrome();
   syncInputToState();   // populate query/tag/page + input box from the URL
   loadSites();
