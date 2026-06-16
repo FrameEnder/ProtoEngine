@@ -1,10 +1,12 @@
 :root {
   --bg: #0e0f13;
+  --bg-rgb: 14, 15, 19;
   --surface: #1b1d22;
   --surface-2: #24262d;
   --surface-hover: #2a2d35;
   --border: #34373f;
   --text: #e3e5e8;
+  --text-hover: #ffffff;
   --text-dim: #9aa0a6;
   --text-faint: #6b7077;
   --blue: #8ab4f8;
@@ -14,9 +16,58 @@
   --red: #f28b82;
   --link: #99c3ff;
   --visited: #c58af9;
+  /* Themeable extras (default to existing tokens so nothing changes visually) */
+  --searchbar: var(--surface);
+  --topbar: #0e0f13;             /* top bar background (own color) */
+  --btn-bg: #8ab4f8;            /* primary action button background */
+  --btn-text: #0e0f13;
+  --search-btn: var(--blue);
+  --icon: var(--text-dim);
+  --glass: 27, 29, 34;            /* RGB triplet used in rgba() for frosted panels */
+  --haze: 14, 15, 19;             /* background scrim color (RGB triplet) */
+  --haze-a: 0.5;                  /* scrim opacity; lower = more image shows */
+  --brand-first: var(--blue);     /* top-left wordmark: first letter */
+  --brand-rest: var(--text);      /* top-left wordmark: the rest */
+  --star-on: var(--amber);
+  --star-off: var(--text-faint);
   --radius: 14px;
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
   --font: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Light theme */
+[data-theme="light"] {
+  --bg: #f4f5f7;
+  --bg-rgb: 244, 245, 247;
+  --surface: #ffffff;
+  --surface-2: #eceef1;
+  --surface-hover: #e4e7ec;
+  --border: #d4d7dd;
+  --text: #1a1c20;
+  --text-hover: #000000;
+  --text-dim: #5a6069;
+  --text-faint: #8b919b;
+  --blue: #1a73e8;
+  --blue-press: #1862c6;
+  --amber: #e8a400;
+  --green: #1e8e3e;
+  --red: #d93025;
+  --link: #1a0dab;
+  --visited: #681da8;
+  --searchbar: var(--surface);
+  --topbar: #f4f5f7;
+  --btn-bg: #1a73e8;
+  --btn-text: #ffffff;
+  --search-btn: var(--blue);
+  --icon: var(--text-dim);
+  --glass: 255, 255, 255;
+  --haze: 255, 255, 255;
+  --haze-a: 0.55;
+  --brand-first: var(--blue);
+  --brand-rest: var(--text);
+  --star-on: var(--amber);
+  --star-off: var(--text-faint);
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
 }
 
 * { box-sizing: border-box; }
@@ -66,18 +117,21 @@ button { font-family: inherit; cursor: pointer; }
   position: sticky;
   top: 0;
   z-index: 20;
-  background: linear-gradient(var(--bg), rgba(14, 15, 19, 0.85));
+  /* Frosted glass: the topbar color at ~80% over a blur. color-mix adds the
+     transparency so any chosen --topbar color still shows the blur behind it. */
+  background: color-mix(in srgb, var(--topbar) 80%, transparent);
   backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 .topbar__brand {
   font-weight: 700;
   font-size: 20px;
   letter-spacing: -0.02em;
-  color: var(--text);
+  color: var(--brand-rest);
   text-decoration: none;
   text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
 }
-.topbar__brand::first-letter { color: var(--blue); }
+.topbar__brand::first-letter { color: var(--brand-first); }
 /* While searching, the colorful hero logo beside the search bar serves as
    the wordmark, so hide the plain top-bar brand to avoid showing the name
    twice on the left. */
@@ -110,10 +164,10 @@ body.searching .topbar__brand { display: none; }
 }
 .textbtn:hover { background: rgba(138, 180, 248, 0.12); }
 .textbtn--accent {
-  background: var(--blue);
-  color: #0b1220;
+  background: var(--btn-bg);
+  color: var(--btn-text);
 }
-.textbtn--accent:hover { background: var(--blue-press); }
+.textbtn--accent:hover { background: var(--btn-bg); filter: brightness(1.1); }
 
 /* User menu */
 .usermenu { position: relative; }
@@ -129,7 +183,7 @@ body.searching .topbar__brand { display: none; }
   height: 38px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--blue), var(--visited));
-  color: #0b1220;
+  color: var(--btn-text);
   font-weight: 700;
   font-size: 16px;
   text-transform: uppercase;
@@ -313,7 +367,7 @@ body.searching .activefilter { max-width: 650px; margin-left: 0; margin-top: 4px
   display: flex;
   align-items: center;
   gap: 12px;
-  background: var(--surface);
+  background: var(--searchbar);
   border: 1px solid var(--border);
   border-radius: 999px;
   padding: 0 18px;
@@ -387,9 +441,9 @@ body.searching .activefilter { max-width: 650px; margin-left: 0; margin-top: 4px
   border-color: var(--blue);
 }
 .pager__btn--current {
-  background: var(--blue);
-  color: #0b1220;
-  border-color: var(--blue);
+  background: var(--btn-bg);
+  color: var(--btn-text);
+  border-color: var(--btn-bg);
   font-weight: 700;
   cursor: default;
 }
@@ -428,7 +482,7 @@ body.searching .activefilter { max-width: 650px; margin-left: 0; margin-top: 4px
   color: var(--link);
   text-decoration: none;
 }
-.result__title:hover { text-decoration: underline; }
+.result__title:hover { color: var(--text-hover); text-decoration: underline; }
 .result__title:visited { color: var(--visited); }
 
 .result__desc { color: var(--text-dim); font-size: 14px; line-height: 1.58; margin: 0; }
@@ -447,7 +501,7 @@ body.searching .activefilter { max-width: 650px; margin-left: 0; margin-top: 4px
   transition: background 0.13s, border-color 0.13s;
 }
 .chip:hover { background: rgba(138, 180, 248, 0.12); border-color: var(--blue); }
-.chip--active { background: var(--blue); color: #0b1220; border-color: var(--blue); }
+.chip--active { background: var(--btn-bg); color: var(--btn-text); border-color: var(--btn-bg); }
 .chip--active:hover { background: var(--blue-press); }
 
 .result__actions { display: flex; gap: 6px; margin-top: 10px; }
@@ -510,13 +564,31 @@ body.searching .activefilter { max-width: 650px; margin-left: 0; margin-top: 4px
 
 .field { margin-bottom: 15px; }
 .field label { display: block; font-size: 13px; color: var(--text-dim); margin-bottom: 6px; }
+/* Standalone text-entry widgets share the search bar color so every box you
+   can type into matches. Excludes the search bar's own borderless input and
+   the color picker's internal fields, which style themselves. */
+input[type="text"]:not(.searchbar__input):not(.cpick__hex):not(.cpick__rgb),
+input[type="password"], input[type="url"],
+input[type="number"]:not(.cpick__rgb), input[type="search"],
+select, textarea {
+  background: var(--searchbar);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 10px 12px;
+  outline: none;
+}
+input:not(.searchbar__input)::placeholder, textarea::placeholder { color: var(--text-faint); }
+
 .field input[type="text"],
 .field input[type="password"],
 .field input[type="url"],
 .field select,
 .field textarea {
   width: 100%;
-  background: var(--surface-2);
+  background: var(--searchbar);
   border: 1px solid var(--border);
   border-radius: 10px;
   color: var(--text);
@@ -547,14 +619,23 @@ body.searching .activefilter { max-width: 650px; margin-left: 0; margin-top: 4px
   font-size: 14px;
   font-weight: 600;
   padding: 11px 18px;
-  transition: background 0.15s, opacity 0.15s;
+  transition: background 0.15s, opacity 0.15s, color 0.15s;
 }
-.btn--primary { background: var(--blue); color: #0b1220; width: 100%; }
-.btn--primary:hover { background: var(--blue-press); }
+.btn--primary { background: var(--btn-bg); color: var(--btn-text); width: 100%; }
+.btn--primary:hover { background: var(--btn-bg); filter: brightness(1.1); }
 .btn--primary:disabled { opacity: 0.55; cursor: not-allowed; }
 .btn--ghost { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
-.btn--ghost:hover { background: var(--surface-hover); }
+.btn--ghost:hover { background: var(--surface-hover); color: var(--text-hover); }
 .btn--small { padding: 8px 13px; font-size: 13px; }
+
+/* Themed file picker: hide the native input, drive it from a styled button. */
+.filepick { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.filepick__input {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+.filepick__btn { cursor: pointer; display: inline-flex; }
+.filepick__name { font-size: 13px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; max-width: 220px; white-space: nowrap; }
 
 .formmsg { font-size: 13px; margin: 4px 0 14px; min-height: 16px; }
 .formmsg--error { color: var(--red); }
@@ -601,21 +682,22 @@ body.searching .activefilter { max-width: 650px; margin-left: 0; margin-top: 4px
   background-position: center;
   background-repeat: no-repeat;
 }
-/* A subtle dark scrim over the image so the top bar and text stay legible
-   regardless of how bright the background is. */
+/* The background haze: a milky/tinted scrim over the image. Its color and
+   strength are theme-driven so Custom can replicate (or disable) the effect.
+   --haze is an RGB triplet; --haze-a is its opacity (0 = no haze). */
 .bglayer::after {
   content: "";
   position: absolute;
   inset: 0;
-  background: linear-gradient(rgba(14,15,19,0.45), rgba(14,15,19,0.65));
+  background: rgba(var(--haze, var(--bg-rgb)), var(--haze-a, 0.55));
 }
 /* When a background is set, the page itself is transparent so the image shows. */
 body.has-bg { background: transparent; }
-body.has-bg .topbar { background: rgba(14,15,19,0.55); backdrop-filter: blur(10px); }
+body.has-bg .topbar { background: color-mix(in srgb, var(--topbar) 70%, transparent); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
 
 /* Frosted-glass panel behind the results when a background is present. */
 body.has-bg .results {
-  background: rgba(27, 29, 34, 0.55);
+  background: rgba(var(--glass), 0.55);
   backdrop-filter: blur(16px) saturate(140%);
   -webkit-backdrop-filter: blur(16px) saturate(140%);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -627,7 +709,7 @@ body.has-bg .results {
 body.has-bg.searching .results { margin-top: 18px; }
 /* Active-filter chips also read better on a faint glass strip. */
 body.has-bg .activefilter {
-  background: rgba(27, 29, 34, 0.5);
+  background: rgba(var(--glass), 0.5);
   backdrop-filter: blur(10px);
   border-radius: 999px;
   padding: 8px 14px;
@@ -762,6 +844,7 @@ body.has-bg .activefilter {
   transition: border-color 0.15s, transform 0.1s, background 0.15s;
 }
 .rsscard:hover { border-color: var(--blue); transform: translateY(-1px); background: var(--surface-hover); }
+.rsscard:hover .rsscard__title { color: var(--text-hover); }
 .rsscard__feed { font-size: 11px; color: var(--blue); margin-bottom: 4px; }
 .rsscard__feedrow { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .rsscard__feedrow .rsscard__feed { margin-bottom: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -775,7 +858,7 @@ body.has-bg .activefilter {
 .rsscard__date { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
 
 /* On a background, give the RSS cards the same frosted glass treatment. */
-body.has-bg .rsscard { background: rgba(27,29,34,0.55); backdrop-filter: blur(12px); border-color: rgba(255,255,255,0.08); }
+body.has-bg .rsscard { background: rgba(var(--glass), 0.55); backdrop-filter: blur(12px); border-color: rgba(255,255,255,0.08); }
 
 /* Floating toggle button to open the feeds panel on small screens. */
 .rsstoggle-btn {
@@ -788,7 +871,7 @@ body.has-bg .rsscard { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--blue);
-  color: #0b1220;
+  color: var(--btn-text);
   align-items: center; justify-content: center;
   box-shadow: var(--shadow);
   cursor: pointer;
@@ -809,7 +892,7 @@ body.has-bg .rsscard { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
     width: min(340px, 86vw);
     max-height: none;
     height: auto;
-    background: rgba(14, 15, 19, 0.72);
+    background: rgba(var(--bg-rgb),0.72);
     backdrop-filter: blur(18px) saturate(140%);
     -webkit-backdrop-filter: blur(18px) saturate(140%);
     border-left: 1px solid rgba(255, 255, 255, 0.08);
@@ -838,12 +921,12 @@ body.has-bg .rsscard { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
 .result__star, .result__dots {
   display: grid; place-items: center;
   width: 30px; height: 30px; border-radius: 8px;
-  border: none; background: none; color: var(--text-faint);
+  border: none; background: none; color: var(--star-off);
   cursor: pointer; transition: color 0.15s, background 0.15s;
 }
 .result__star:hover, .result__dots:hover { background: var(--surface-hover); color: var(--text); }
-.result__star--on { color: var(--amber); }
-.result__star--on:hover { color: var(--amber); }
+.result__star--on { color: var(--star-on); }
+.result__star--on:hover { color: var(--star-on); }
 .result__star svg, .result__dots svg { display: block; }
 .result__menu { position: relative; }
 .result__menudrop {
@@ -955,7 +1038,7 @@ body.has-bg .rsscard { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
   opacity: 0.95;
 }
 
-body.has-bg .favtile { background: rgba(27,29,34,0.55); backdrop-filter: blur(12px); border-color: rgba(255,255,255,0.08); }
+body.has-bg .favtile { background: rgba(var(--glass), 0.55); backdrop-filter: blur(12px); border-color: rgba(255,255,255,0.08); }
 
 /* Edit mode: tiles wobble and show a red delete badge (like phone home-screen). */
 .favgrid--editing { padding: 6px; } /* room so corner badges aren't clipped by the panel */
@@ -1007,7 +1090,7 @@ body.has-bg .favtile { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
     left: 0; bottom: 0;
     width: min(300px, 84vw);
     max-height: none;
-    background: rgba(14,15,19,0.72);
+    background: rgba(var(--bg-rgb),0.72);
     backdrop-filter: blur(18px) saturate(140%);
     -webkit-backdrop-filter: blur(18px) saturate(140%);
     border-right: 1px solid rgba(255,255,255,0.08);
@@ -1030,6 +1113,101 @@ body.has-bg .favtile { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
 @media (max-width: 1199px) {
   body.drawer-open { overflow: hidden; }
 }
+
+/* ---------- Theme picker (Customization) ---------- */
+.themeseg { display: inline-flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 4px; margin-bottom: 12px; }
+.themeseg__btn {
+  border: none; background: none; color: var(--text-dim);
+  padding: 7px 16px; border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 600;
+  transition: background 0.15s, color 0.15s;
+}
+.themeseg__btn:hover { color: var(--text-hover); }
+.themeseg__btn--active { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,0.25); }
+.themegrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; }
+.themegrid__row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); min-width: 0; }
+.themegrid__swatch {
+  width: 30px; height: 28px; flex: none; padding: 0;
+  border: 1px solid var(--border); border-radius: 6px; cursor: pointer; background: #888;
+}
+.themegrid__swatch:hover { border-color: var(--blue); }
+.themegrid__hex {
+  width: 76px; flex: none; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px; text-transform: lowercase; padding: 6px 8px;
+}
+.themegrid__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+
+/* Custom color popup picker */
+.colorpop {
+  position: fixed; z-index: 200; width: 232px;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px; box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+}
+.cpick__top { display: flex; gap: 10px; }
+.cpick__area { position: relative; flex: 1; height: 150px; border-radius: 8px; cursor: crosshair; touch-action: none; }
+.cpick__cursor {
+  position: absolute; width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid #fff; box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+  transform: translate(-50%, -50%); pointer-events: none;
+}
+.cpick__hue {
+  position: relative; width: 16px; height: 150px; border-radius: 8px; cursor: ns-resize; touch-action: none;
+  background: linear-gradient(to bottom, #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);
+}
+.cpick__huecursor {
+  position: absolute; left: -2px; right: -2px; height: 4px;
+  border: 2px solid #fff; border-radius: 3px; box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+  transform: translateY(-50%); pointer-events: none;
+}
+.cpick__rgbrow { display: flex; gap: 6px; margin-top: 10px; }
+.cpick__rgbfield {
+  flex: 1; display: flex; align-items: center; gap: 4px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 0 6px; background: var(--bg);
+}
+.cpick__rgbfield > span { color: var(--text-dim); font-size: 11px; font-weight: 600; }
+.cpick__rgb {
+  width: 100%; min-width: 0; border: none; background: none; color: var(--text);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px;
+  padding: 7px 0; outline: none;
+  -moz-appearance: textfield;
+}
+.cpick__rgb::-webkit-outer-spin-button, .cpick__rgb::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.cpick__hexrow {
+  display: flex; align-items: center; gap: 4px; margin-top: 8px;
+  border: 1px solid var(--border); border-radius: 8px; padding: 0 8px; background: var(--bg);
+}
+.cpick__hash { color: var(--text-dim); font-family: ui-monospace, monospace; }
+.cpick__hex {
+  flex: 1; border: none; background: none; color: var(--text);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px;
+  text-transform: lowercase; padding: 8px 0; outline: none;
+}
+.cpick__recent { display: flex; align-items: center; gap: 5px; margin-top: 10px; flex-wrap: wrap; }
+.cpick__recentlabel { font-size: 11px; color: var(--text-dim); margin-right: 2px; }
+.cpick__recentempty { color: var(--text-faint); font-size: 12px; }
+.cpick__dot {
+  width: 20px; height: 20px; flex: none; border-radius: 5px;
+  border: 1px solid var(--border); cursor: pointer; padding: 0;
+}
+.cpick__dot:hover { transform: scale(1.12); }
+.themepresets { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.hazerow { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.hazerow__toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; }
+.hazerow__color { display: flex; align-items: center; gap: 8px; }
+.themepreset { display: flex; align-items: center; gap: 6px; }
+.themepreset__use {
+  flex: 1; text-align: left; padding: 9px 12px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  cursor: pointer; font-size: 13px; transition: background 0.15s;
+}
+.themepreset__use:hover { background: var(--surface-hover); }
+.themepreset__del {
+  width: 30px; height: 30px; flex: none; border-radius: 8px;
+  border: 1px solid var(--border); background: none; color: var(--text-dim);
+  cursor: pointer; font-size: 16px; line-height: 1;
+}
+.themepreset__del:hover { background: var(--red); color: #fff; border-color: var(--red); }
+
+@media (max-width: 760px) { .themegrid { grid-template-columns: 1fr; } }
 
 /* ---------- Full-page settings view ---------- */
 .settingspage {
@@ -1158,7 +1336,7 @@ body.has-bg .favtile { background: rgba(27,29,34,0.55); backdrop-filter: blur(12
   width: 64px; height: 64px; border-radius: 50%; flex: none;
   display: grid; place-items: center; overflow: hidden;
   background: linear-gradient(135deg, var(--blue), var(--visited));
-  color: #0b1220; font-weight: 700; font-size: 24px; text-transform: uppercase;
+  color: var(--btn-text); font-weight: 700; font-size: 24px; text-transform: uppercase;
 }
 .accountpfp__img img { width: 100%; height: 100%; object-fit: cover; }
 
