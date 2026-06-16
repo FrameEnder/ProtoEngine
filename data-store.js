@@ -272,6 +272,8 @@ export const settings = {
       tabTitle: sanitizeName(s.tabTitle, appName),
       taglines: sanitizeTaglines(s.taglines),
       heroAnimation: (s.heroAnimation === 'random' || HERO_ANIMATIONS.includes(s.heroAnimation)) ? s.heroAnimation : 'random',
+      defaultTheme: ['dark', 'light', 'custom'].includes(s.defaultTheme) ? s.defaultTheme : 'dark',
+      defaultThemeColors: (s.defaultThemeColors && typeof s.defaultThemeColors === 'object') ? s.defaultThemeColors : {},
     };
   },
   write(patch) {
@@ -280,6 +282,8 @@ export const settings = {
     next.tabTitle = sanitizeName(next.tabTitle, next.appName);
     next.taglines = sanitizeTaglines(next.taglines);
     if (next.heroAnimation !== 'random' && !HERO_ANIMATIONS.includes(next.heroAnimation)) next.heroAnimation = 'random';
+    if (!['dark', 'light', 'custom'].includes(next.defaultTheme)) next.defaultTheme = 'dark';
+    if (!next.defaultThemeColors || typeof next.defaultThemeColors !== 'object') next.defaultThemeColors = {};
     stmt.setSetting.run('branding', JSON.stringify(next));
     return next;
   },
