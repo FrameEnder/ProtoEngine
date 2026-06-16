@@ -155,7 +155,11 @@ app.get('/api/csrf', (req, res) => {
 // Public config the frontend reads on load (brand name, taglines, animation).
 app.get('/api/config', (req, res) => {
   const s = settings.read();
-  res.json({ appName: s.appName, taglines: s.taglines, heroAnimation: s.heroAnimation, heroAnimations: HERO_ANIMATIONS });
+  res.json({
+    appName: s.appName, taglines: s.taglines,
+    heroAnimation: s.heroAnimation, heroAnimations: HERO_ANIMATIONS,
+    defaultTheme: s.defaultTheme, defaultThemeColors: s.defaultThemeColors,
+  });
 });
 
 app.use(loadUser);
