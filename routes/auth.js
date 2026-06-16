@@ -7,7 +7,7 @@ import { fileURLToPath } from 'url';
 import multer from 'multer';
 import { db } from '../data-store.js';
 import { requireAuth } from '../middleware/auth.js';
-import { uid, validUsername, validPassword, clampStr } from '../util.js';
+import { uid, validUsername, validPassword, clampStr, sanitizeThemeColors } from '../util.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const AVATAR_DIR = path.join(__dirname, '..', 'public', 'avatars');
@@ -68,6 +68,9 @@ router.get('/me', async (req, res) => {
       background: u.background || null,
       favorites: Array.isArray(u.favorites) ? u.favorites : [],
       favoritesView: u.favoritesView === 'list' ? 'list' : 'grid',
+      theme: ['dark', 'light', 'custom'].includes(u.theme) ? u.theme : null,
+      themeColors: (u.themeColors && typeof u.themeColors === 'object') ? u.themeColors : {},
+      themePresets: Array.isArray(u.themePresets) ? u.themePresets : [],
       hasApiKey: !!u.apiKeyHash,
     },
   });
@@ -228,6 +231,45 @@ router.patch('/favorites/view', requireAuth, async (req, res) => {
   const view = (req.body && req.body.view) === 'list' ? 'list' : 'grid';
   await db.updateUser(me.id, { favoritesView: view });
   res.json({ view });
+});
+
+// ---- Theme (per account) ----
+// Save the selected theme mode and, for custom, the color overrides.
+router.patch('/theme', requireAuth, async (req, res) => {
+  const me = await db.getUserById(req.user.id);
+  if (!me) return res.status(404).json({ error: 'Account not found.' });
+  const b = req.body || {};
+  const patch = {};
+  if (['dark', 'light', 'custom'].includes(b.theme)) patch.theme = b.theme;
+  if (b.themeColors !== undefined) patch.themeColors = sanitizeThemeColors(b.themeColors);
+  const next = await db.updateUser(me.id, patch);
+  res.json({ theme: next.theme || 'dark', themeColors: next.themeColors || {} });
+});
+
+// Save the current custom colors as a named preset.
+router.post('/theme/presets', requireAuth, async (req, res) => {
+  const me = await db.getUserById(req.user.id);
+  if (!me) return res.status(404).json({ error: 'Account not found.' });
+  const name = clampStr((req.body && req.body.name) || '', 40).trim();
+  if (!name) return res.status(400).json({ error: 'Enter a preset name.' });
+  const colors = sanitizeThemeColors(req.body && req.body.colors);
+  const presets = Array.isArray(me.themePresets) ? me.themePresets.slice() : [];
+  if (presets.length >= 30) return res.status(400).json({ error: 'Preset limit reached (30).' });
+  // Overwrite a same-named preset rather than duplicating.
+  const existing = presets.find((p) => p.name.toLowerCase() === name.toLowerCase());
+  if (existing) existing.colors = colors;
+  else presets.push({ id: uid(), name, colors });
+  await db.updateUser(me.id, { themePresets: presets });
+  res.json({ presets });
+});
+
+// Delete a named preset.
+router.delete('/theme/presets/:id', requireAuth, async (req, res) => {
+  const me = await db.getUserById(req.user.id);
+  if (!me) return res.status(404).json({ error: 'Account not found.' });
+  const presets = (Array.isArray(me.themePresets) ? me.themePresets : []).filter((p) => p.id !== req.params.id);
+  await db.updateUser(me.id, { themePresets: presets });
+  res.json({ presets });
 });
 
 // ---- Favorites (per-user, ordered list of site IDs) ----
