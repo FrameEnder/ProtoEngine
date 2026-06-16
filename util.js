@@ -54,3 +54,53 @@ export function parseTags(input) {
   }
   return out;
 }
+
+// Canonical list of customizable theme color keys (used by the custom theme).
+// Keep in sync with the CSS variables in styles.css (--ct-* overrides) and the
+// editor in the frontend. Each entry: { key, label, var }.
+export const THEME_COLOR_KEYS = [
+  { key: 'bg',            label: 'Background',                 var: '--bg' },
+  { key: 'topbar',        label: 'Top bar',                    var: '--topbar' },
+  { key: 'btnBg',         label: 'Button background',          var: '--btn-bg' },
+  { key: 'surface',       label: 'Panel / search bar',         var: '--surface' },
+  { key: 'searchbar',     label: 'Search bar',                 var: '--searchbar' },
+  { key: 'border',        label: 'Borders',                    var: '--border' },
+  { key: 'text',          label: 'Text',                       var: '--text' },
+  { key: 'textHover',     label: 'Hovered text',               var: '--text-hover' },
+  { key: 'subtext',       label: 'Hero subtext / dim text',    var: '--text-dim' },
+  { key: 'btnHover',      label: 'Hovered button',             var: '--surface-hover' },
+  { key: 'btnClick',      label: 'Clicked button',             var: '--blue-press' },
+  { key: 'btnClickText',  label: 'Clicked button text',        var: '--btn-text' },
+  { key: 'searchBtn',     label: 'Search button',              var: '--search-btn' },
+  { key: 'icon',          label: 'Icons',                      var: '--icon' },
+  { key: 'glass',         label: 'Frosted glass hue',          var: '--glass' },
+  { key: 'brandFirst',    label: 'Corner logo — first letter', var: '--brand-first' },
+  { key: 'brandRest',     label: 'Corner logo — the rest',     var: '--brand-rest' },
+  { key: 'hero1',         label: 'Hero array — color 1',       var: '--blue' },
+  { key: 'hero2',         label: 'Hero array — color 2',       var: '--red' },
+  { key: 'hero3',         label: 'Hero array — color 3',       var: '--amber' },
+  { key: 'hero4',         label: 'Hero array — color 4',       var: '--green' },
+  { key: 'starOn',        label: 'Favorite star — selected',   var: '--star-on' },
+  { key: 'starOff',       label: 'Favorite star — unselected', var: '--star-off' },
+  { key: 'link',          label: 'Links',                      var: '--link' },
+];
+
+// Validate a hex color (#rgb, #rgba, #rrggbb, #rrggbbaa).
+export function validHexColor(v) {
+  return typeof v === 'string' && /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(v.trim());
+}
+
+// Keep only valid, known color keys with valid hex values. Two meta keys are
+// allowed through: _hazeOn ('1'|'0') and _hazeColor (hex) for the bg haze.
+export function sanitizeThemeColors(obj) {
+  const allowed = new Set(THEME_COLOR_KEYS.map((k) => k.key));
+  const out = {};
+  if (obj && typeof obj === 'object') {
+    for (const [k, v] of Object.entries(obj)) {
+      if (allowed.has(k) && validHexColor(v)) out[k] = v.trim();
+    }
+    if (obj._hazeOn === '1' || obj._hazeOn === '0') out._hazeOn = obj._hazeOn;
+    if (validHexColor(obj._hazeColor)) out._hazeColor = obj._hazeColor.trim();
+  }
+  return out;
+}
