@@ -39,7 +39,7 @@ there's nothing else to set up.
 | ⭐ **Favorites** | Pin sites to your own favorites panel. Reorder them by dragging, switch between grid and list view, and remove them in edit mode. Your layout is remembered. |
 | 📰 **RSS feeds** | Add feeds and sort them into groups. Switch groups from the feed panel. Entries are pulled together and shown newest first. Supports RSS 2.0 and Atom. |
 | 🎨 **Branding** | Admins can change the name, tab title, taglines, and pick from 15 title animations. No restart needed. |
-| 🖼️ **Personalization** | Set your own profile picture and background. Results sit on a frosted-glass panel over your wallpaper adding to your own unique flair. |
+| 🖼️ **Personalization** | Set your own profile picture and background. Results sit on a frosted-glass panel over your wallpaper, and with Custom Theme's you can add even more to your own unique flair. |
 | 🔑 **API** | Each account can create a personal API key for adding or managing sites from scripts, used primarily for the Browser Extension "Proto Assistant". |
 | 🛡️ **Security** | Passwords are hashed. Sessions and forms are protected. Uploads are checked, and writes go through SQLite transactions. |
 | 💾 **Backups** | Download a `.zip` of all your sites, taglines, and favicons, and restore it later. |
