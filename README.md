@@ -15,7 +15,7 @@
 | | |
 |:-:|:-:|
 | ![](meta/preview1.png) | ![](meta/preview2.png) |
-| ![](meta/preview4.png) | ![](meta/preview3.png) |
+| ![](meta/preview5.png) | ![](meta/preview6.png) |
 
 </div>
 
