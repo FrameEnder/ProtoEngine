@@ -3,13 +3,36 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { db } from '../data-store.js';
+import { db, settings } from '../data-store.js';
 import { requireAuth, requireRole, RANK } from '../middleware/auth.js';
 import { uid, clampStr, normalizeUrl, parseTags } from '../util.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ICON_DIR = path.join(__dirname, '..', 'public', 'icons');
 if (!fs.existsSync(ICON_DIR)) fs.mkdirSync(ICON_DIR, { recursive: true });
+
+// Apply tag filtering to a list of sites for a given request/viewer.
+// Hides sites carrying an admin-filtered tag the viewer's rank can't see, and
+// (for signed-in users with their filter on) the viewer's own hidden tags.
+// This is the single source of truth used by search, suggestions, and tags so
+// filtered content never leaks through any endpoint.
+function visibleSites(sites, req) {
+  const cfg = settings.read();
+  const viewerRank = req.user ? (RANK[req.user.role] || 0) : 0;
+  const blockedTags = (cfg.adminFilters || [])
+    .filter((f) => f && f.tag && (RANK[f.minRank] || 1) > viewerRank)
+    .map((f) => f.tag.toLowerCase());
+  const mine = (req.user && req.user.filterOn && Array.isArray(req.user.filterTags))
+    ? req.user.filterTags.map((t) => t.toLowerCase())
+    : [];
+  if (!blockedTags.length && !mine.length) return sites;
+  return sites.filter((s) => {
+    const tags = (s.tags || []).map((t) => t.toLowerCase());
+    if (blockedTags.some((bt) => tags.includes(bt))) return false;
+    if (mine.some((mt) => tags.includes(mt))) return false;
+    return true;
+  });
+}
 
 const router = express.Router();
 
@@ -72,6 +95,16 @@ router.get('/', async (req, res) => {
   const hasIcon = req.query.hasIcon; // 'true' | 'false' | undefined
 
   let results = sites;
+
+  // --- Tag filtering (hide matching sites entirely) ---
+  // Admin rank filter + the user's personal filter, via the shared helper so
+  // every endpoint hides the same sites. The admin Listings tab (all=true)
+  // bypasses this so admins can manage every site.
+  const adminBypass = req.query.all === 'true' && req.user && req.user.role === 'admin';
+  if (!adminBypass) {
+    results = visibleSites(results, req);
+  }
+
   if (wantTags.length) {
     results = results.filter((s) => {
       const tags = s.tags || [];
@@ -104,7 +137,7 @@ router.get('/', async (req, res) => {
   // `all=true` bypasses paging (used by the admin Listings tab).
   const PER_PAGE = 10;
   const matched = results.length;
-  const returnAll = req.query.all === 'true';
+  const returnAll = req.query.all === 'true' && req.user && req.user.role === 'admin';
   const pageCount = Math.max(1, Math.ceil(matched / PER_PAGE));
   let page = parseInt(req.query.page, 10);
   if (!Number.isInteger(page) || page < 1) page = 1;
@@ -125,7 +158,7 @@ router.get('/', async (req, res) => {
 // Return all distinct tags with usage counts, most-used first. Public.
 // Powers the filter popup and the tag picker when adding listings.
 router.get('/tags', async (req, res) => {
-  const sites = await db.getSites();
+  const sites = visibleSites(await db.getSites(), req);
   const counts = new Map();
   for (const s of sites) {
     for (const t of s.tags || []) {
@@ -144,7 +177,7 @@ router.get('/tags', async (req, res) => {
 router.get('/suggest', async (req, res) => {
   const q = clampStr(req.query.q, 100).toLowerCase().trim();
   if (!q) return res.json({ suggestions: [] });
-  const sites = await db.getSites();
+  const sites = visibleSites(await db.getSites(), req);
 
   // Score candidates: a name/tag that starts with the query ranks above one
   // that merely contains it. De-duplicate case-insensitively.
