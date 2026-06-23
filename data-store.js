@@ -274,6 +274,8 @@ export const settings = {
       heroAnimation: (s.heroAnimation === 'random' || HERO_ANIMATIONS.includes(s.heroAnimation)) ? s.heroAnimation : 'random',
       defaultTheme: ['dark', 'light', 'custom'].includes(s.defaultTheme) ? s.defaultTheme : 'dark',
       defaultThemeColors: (s.defaultThemeColors && typeof s.defaultThemeColors === 'object') ? s.defaultThemeColors : {},
+      filterName: sanitizeName(s.filterName, 'Filter'),
+      adminFilters: Array.isArray(s.adminFilters) ? s.adminFilters : [],
     };
   },
   write(patch) {
@@ -284,6 +286,8 @@ export const settings = {
     if (next.heroAnimation !== 'random' && !HERO_ANIMATIONS.includes(next.heroAnimation)) next.heroAnimation = 'random';
     if (!['dark', 'light', 'custom'].includes(next.defaultTheme)) next.defaultTheme = 'dark';
     if (!next.defaultThemeColors || typeof next.defaultThemeColors !== 'object') next.defaultThemeColors = {};
+    next.filterName = sanitizeName(next.filterName, 'Filter');
+    if (!Array.isArray(next.adminFilters)) next.adminFilters = [];
     stmt.setSetting.run('branding', JSON.stringify(next));
     return next;
   },
