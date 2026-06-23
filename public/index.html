@@ -11,7 +11,7 @@
     html { background: #0e0f13; }
     body { background: #0e0f13; color: #e3e5e8; margin: 0; }
   </style>
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v={{ASSET_VER}}" />
   <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
 </head>
 <body>
@@ -34,6 +34,10 @@
           <div class="usermenu__role" id="menuRole"></div>
         </div>
         <button class="usermenu__item" id="accountBtn" role="menuitem">Settings</button>
+        <button class="usermenu__item usermenu__item--toggle" id="filterToggleBtn" role="menuitemcheckbox" hidden>
+          <span id="filterToggleLabel">Filter</span>
+          <span class="usermenu__switch" id="filterToggleSwitch" aria-hidden="true"></span>
+        </button>
         <button class="usermenu__item" id="logoutBtn" role="menuitem">Sign out</button>
       </div>
     </div>
@@ -88,6 +92,6 @@
   <!-- Full-page settings view -->
   <div class="settingspage" id="settingsPage" hidden></div>
 
-  <script src="/app.js" defer></script>
+  <script src="/app.js?v={{ASSET_VER}}" defer></script>
 </body>
 </html>
