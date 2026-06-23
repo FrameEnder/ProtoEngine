@@ -47,7 +47,11 @@ export async function loadUser(req, res, next) {
   if (req.session && req.session.userId) {
     const u = await db.getUserById(req.session.userId);
     if (u) {
-      req.user = { id: u.id, username: u.username, role: u.role };
+      req.user = {
+        id: u.id, username: u.username, role: u.role,
+        filterOn: !!u.filterOn,
+        filterTags: Array.isArray(u.filterTags) ? u.filterTags : [],
+      };
     } else {
       // Session points to a deleted user — clear it.
       req.session.destroy(() => {});
