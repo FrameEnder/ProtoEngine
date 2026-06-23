@@ -59,6 +59,19 @@ router.patch('/settings', async (req, res) => {
   if (typeof b.heroAnimation === 'string') patch.heroAnimation = b.heroAnimation;
   if (['dark', 'light', 'custom'].includes(b.defaultTheme)) patch.defaultTheme = b.defaultTheme;
   if (b.defaultThemeColors !== undefined) patch.defaultThemeColors = sanitizeThemeColors(b.defaultThemeColors);
+  if (typeof b.filterName === 'string') patch.filterName = b.filterName;
+  if (Array.isArray(b.adminFilters)) {
+    const ranks = ['user', 'moderator', 'admin'];
+    const seen = new Set();
+    patch.adminFilters = [];
+    for (const f of b.adminFilters) {
+      if (!f || typeof f.tag !== 'string') continue;
+      const tag = f.tag.trim().toLowerCase().slice(0, 40);
+      const minRank = ranks.includes(f.minRank) ? f.minRank : 'user';
+      if (tag && !seen.has(tag)) { seen.add(tag); patch.adminFilters.push({ tag, minRank }); }
+      if (patch.adminFilters.length >= 200) break;
+    }
+  }
   const next = settings.write(patch);
   res.json({ settings: next });
 });
