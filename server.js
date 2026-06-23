@@ -159,6 +159,7 @@ app.get('/api/config', (req, res) => {
     appName: s.appName, taglines: s.taglines,
     heroAnimation: s.heroAnimation, heroAnimations: HERO_ANIMATIONS,
     defaultTheme: s.defaultTheme, defaultThemeColors: s.defaultThemeColors,
+    filterName: s.filterName,
   });
 });
 
@@ -200,12 +201,24 @@ app.use('/api/rss', rssRoutes);
 // are correct on first paint (no flash of the default name). Other static
 // assets fall through to express.static below.
 const INDEX_PATH = path.join(__dirname, 'public', 'index.html');
+// Cache-busting asset version: derived from the modification time of the JS/CSS
+// so every deploy (which rewrites those files) yields a fresh ?v=, forcing
+// browsers and proxies to fetch the new build instead of stale cached copies.
+function assetVersion() {
+  try {
+    const a = fs.statSync(path.join(__dirname, 'public', 'app.js')).mtimeMs;
+    const b = fs.statSync(path.join(__dirname, 'public', 'styles.css')).mtimeMs;
+    return Math.floor(Math.max(a, b)).toString(36);
+  } catch { return String(Date.now()); }
+}
 function sendIndex(req, res) {
   fs.readFile(INDEX_PATH, 'utf8', (err, html) => {
     if (err) return res.status(500).send('Could not load the page.');
     const s = settings.read();
     res.type('html').send(
-      html.replaceAll('{{APP_NAME}}', s.appName).replaceAll('{{TAB_TITLE}}', s.tabTitle)
+      html.replaceAll('{{APP_NAME}}', s.appName)
+        .replaceAll('{{TAB_TITLE}}', s.tabTitle)
+        .replaceAll('{{ASSET_VER}}', assetVersion())
     );
   });
 }
