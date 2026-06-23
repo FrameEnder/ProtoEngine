@@ -71,6 +71,8 @@ router.get('/me', async (req, res) => {
       theme: ['dark', 'light', 'custom'].includes(u.theme) ? u.theme : null,
       themeColors: (u.themeColors && typeof u.themeColors === 'object') ? u.themeColors : {},
       themePresets: Array.isArray(u.themePresets) ? u.themePresets : [],
+      filterTags: Array.isArray(u.filterTags) ? u.filterTags : [],
+      filterOn: !!u.filterOn,
       hasApiKey: !!u.apiKeyHash,
     },
   });
@@ -270,6 +272,29 @@ router.delete('/theme/presets/:id', requireAuth, async (req, res) => {
   const presets = (Array.isArray(me.themePresets) ? me.themePresets : []).filter((p) => p.id !== req.params.id);
   await db.updateUser(me.id, { themePresets: presets });
   res.json({ presets });
+});
+
+// ---- Personal tag filter (per account) ----
+// Replace the full list of tags to hide from this user's own results.
+router.patch('/filter', requireAuth, async (req, res) => {
+  const me = await db.getUserById(req.user.id);
+  if (!me) return res.status(404).json({ error: 'Account not found.' });
+  const b = req.body || {};
+  const patch = {};
+  if (Array.isArray(b.tags)) {
+    // Normalize: trim, lowercase, dedupe, cap length and count.
+    const seen = new Set();
+    const tags = [];
+    for (const raw of b.tags) {
+      const t = clampStr(raw, 40).trim().toLowerCase();
+      if (t && !seen.has(t)) { seen.add(t); tags.push(t); }
+      if (tags.length >= 100) break;
+    }
+    patch.filterTags = tags;
+  }
+  if (typeof b.on === 'boolean') patch.filterOn = b.on;
+  const next = await db.updateUser(me.id, patch);
+  res.json({ filterTags: next.filterTags || [], filterOn: !!next.filterOn });
 });
 
 // ---- Favorites (per-user, ordered list of site IDs) ----
