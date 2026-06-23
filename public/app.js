@@ -1386,6 +1386,8 @@ function openSettingsPage() {
     el('hr', { class: 'account__rule' }),
     el('div', { class: 'account__sectionlabel' }, 'Username & password'),
     form,
+    el('hr', { class: 'account__rule' }),
+    buildFilterSection(),
   );
   const panelCustomization = el('div', {},
     el('div', { class: 'account__sectionlabel' }, 'Theme'),
@@ -1616,6 +1618,120 @@ function buildColorPopup(startHex, recents, onChange) {
   paint();
   _openColorPop = pop;
   return pop;
+}
+
+// A tag entry box with autocomplete (tags only), plus an Add button. Calls
+// onAdd(tag) when a tag is added (via Add, Enter, or picking a suggestion).
+// `existing()` returns the current tags so suggestions can exclude them.
+function buildTagInput(onAdd, existing) {
+  const input = el('input', { type: 'text', placeholder: 'Type a tag…', spellcheck: 'false', autocomplete: 'off' });
+  const addBtn = el('button', { type: 'button', class: 'btn btn--primary btn--small' }, 'Add');
+  const menu = el('div', { class: 'tagsuggest', hidden: true });
+  const sel = { items: [], active: -1 };
+
+  function close() { menu.hidden = true; sel.items = []; sel.active = -1; menu.innerHTML = ''; }
+  function commit(val) {
+    const t = (val != null ? val : input.value).trim().toLowerCase();
+    if (!t) return;
+    onAdd(t);
+    input.value = '';
+    close();
+    input.focus();
+  }
+  async function refresh() {
+    const q = input.value.trim().toLowerCase();
+    const all = await loadAllTags();
+    const have = new Set((existing() || []).map((x) => x.toLowerCase()));
+    let items = all.map((t) => t.tag).filter((t) => !have.has(t));
+    if (q) items = items.filter((t) => t.includes(q));
+    items = items.slice(0, 6);
+    sel.items = items; sel.active = -1;
+    menu.innerHTML = '';
+    if (!items.length) { menu.hidden = true; return; }
+    items.forEach((t, i) => {
+      const row = el('button', { type: 'button', class: 'tagsuggest__item' }, t);
+      row.addEventListener('mousedown', (e) => { e.preventDefault(); commit(t); });
+      row.addEventListener('mouseenter', () => { sel.active = i; paint(); });
+      menu.append(row);
+    });
+    menu.hidden = false;
+  }
+  function paint() {
+    [...menu.children].forEach((c, i) => c.classList.toggle('tagsuggest__item--active', i === sel.active));
+  }
+  input.addEventListener('input', refresh);
+  input.addEventListener('focus', refresh);
+  input.addEventListener('blur', () => setTimeout(close, 120));
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); sel.active = Math.min(sel.active + 1, sel.items.length - 1); paint(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); sel.active = Math.max(sel.active - 1, -1); paint(); }
+    else if (e.key === 'Enter') { e.preventDefault(); commit(sel.active >= 0 ? sel.items[sel.active] : null); }
+    else if (e.key === 'Escape') { close(); }
+  });
+  addBtn.addEventListener('click', () => commit());
+  const wrap = el('div', { class: 'tagentry' },
+    el('div', { class: 'tagentry__row' }, el('div', { class: 'tagentry__field' }, input, menu), addBtn));
+  return wrap;
+}
+
+// Render a removable tag chip list into `host` from `tags`, calling onRemove(tag).
+function renderTagChips(host, tags, onRemove) {
+  host.innerHTML = '';
+  if (!tags.length) {
+    host.append(el('div', { class: 'field__hint', style: 'margin:6px 0' }, 'No tags added yet.'));
+    return;
+  }
+  for (const t of tags) {
+    const x = el('button', { type: 'button', class: 'filterchip__x', 'aria-label': 'Remove ' + t }, '×');
+    x.addEventListener('click', () => onRemove(t));
+    host.append(el('span', { class: 'filterchip' }, el('span', { class: 'filterchip__label' }, t), x));
+  }
+}
+
+// Account-level filter: collapsible panel with on/off toggle, tag entry, and
+// the list of tags to hide from this account's results.
+function buildFilterSection() {
+  const name = state.filterName || 'Filter';
+  let tags = Array.isArray(state.user.filterTags) ? state.user.filterTags.slice() : [];
+  let on = !!state.user.filterOn;
+
+  const caret = el('span', { class: 'collapse__caret', html: '<svg viewBox="0 0 24 24" width="16" height="16"><path d="M9 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' });
+  const head = el('button', { type: 'button', class: 'collapse__head' }, caret, el('span', {}, name));
+  const body = el('div', { class: 'collapse__body' });
+  const panel = el('div', { class: 'collapse' }, head, body);
+  head.addEventListener('click', () => panel.classList.toggle('collapse--open'));
+
+  const toggle = el('input', { type: 'checkbox' });
+  toggle.checked = on;
+  const chips = el('div', { class: 'filterchips' });
+
+  async function save() {
+    state.user.filterTags = tags.slice();
+    state.user.filterOn = on;
+    try { await api('/auth/filter', { method: 'PATCH', body: { tags, on } }); }
+    catch (e) { toast(e.message, true); }
+    if (typeof updateFilterMenuToggle === 'function') updateFilterMenuToggle();
+  }
+  function repaint() { renderTagChips(chips, tags, (t) => { tags = tags.filter((x) => x !== t); repaint(); save(); }); }
+
+  toggle.addEventListener('change', () => { on = toggle.checked; save(); });
+  const entry = buildTagInput((t) => {
+    if (!tags.includes(t)) { tags.push(t); repaint(); save(); }
+  }, () => tags);
+
+  body.append(
+    el('div', { class: 'field__hint', style: 'margin-bottom:10px' },
+      'Hide sites with these tags from your results. Add tags below; toggle the filter on or off any time.'),
+    el('label', { class: 'hazerow__toggle', style: 'margin-bottom:12px' }, toggle, el('span', {}, 'Filter enabled')),
+    entry,
+    chips,
+  );
+  repaint();
+
+  return el('div', {},
+    el('div', { class: 'account__sectionlabel' }, name),
+    panel,
+  );
 }
 
 function buildThemeSection() {
@@ -1880,13 +1996,15 @@ function renderAdminInto(panel) {
   const tabBranding = el('button', { class: 'tab tab--active' }, 'Branding');
   const tabUsers = el('button', { class: 'tab' }, 'Users');
   const tabSites = el('button', { class: 'tab' }, 'Listings');
+  const tabFilter = el('button', { class: 'tab' }, 'Filter');
   const tabBackup = el('button', { class: 'tab' }, 'Backup');
-  tabs.append(tabBranding, tabUsers, tabSites, tabBackup);
-  const all = [tabBranding, tabUsers, tabSites, tabBackup];
+  tabs.append(tabBranding, tabUsers, tabSites, tabFilter, tabBackup);
+  const all = [tabBranding, tabUsers, tabSites, tabFilter, tabBackup];
   function setActive(t) { all.forEach((x) => x.classList.toggle('tab--active', x === t)); }
   tabBranding.onclick = () => { setActive(tabBranding); renderBrandingTab(content); };
   tabUsers.onclick = () => { setActive(tabUsers); renderUsersTab(content); };
   tabSites.onclick = () => { setActive(tabSites); renderSitesTab(content); };
+  tabFilter.onclick = () => { setActive(tabFilter); renderFilterTab(content); };
   tabBackup.onclick = () => { setActive(tabBackup); renderBackupTab(content); };
   panel.append(tabs, content);
   renderBrandingTab(content);
@@ -2220,6 +2338,76 @@ async function renderRssTab(panel) {
 }
 
 // ---------- admin panel ----------
+// Admin Filter sub-tab: name the feature, and manage tags hidden from viewers
+// below a chosen rank. Logged-out viewers (rank 0) can't bypass it.
+async function renderFilterTab(content) {
+  content.innerHTML = '';
+  content.append(el('div', { class: 'placeholder' }, 'Loading…'));
+  let s;
+  try { s = (await api('/admin/settings')).settings; }
+  catch (e) { content.innerHTML = ''; content.append(el('div', { class: 'placeholder' }, e.message)); return; }
+  content.innerHTML = '';
+
+  // Working copy of admin filters: [{ tag, minRank }].
+  let filters = Array.isArray(s.adminFilters) ? s.adminFilters.map((f) => ({ ...f })) : [];
+
+  const nameInput = el('input', { type: 'text', maxlength: '40', value: s.filterName || 'Filter' });
+  const msg = el('div', { class: 'formmsg' });
+
+  const list = el('div', { class: 'adminfilters' });
+  const RANK_OPTS = [['user', 'Members & up'], ['moderator', 'Moderators & up'], ['admin', 'Admins only']];
+  function repaint() {
+    list.innerHTML = '';
+    if (!filters.length) {
+      list.append(el('div', { class: 'field__hint', style: 'margin:6px 0' }, 'No filtered tags yet.'));
+      return;
+    }
+    filters.forEach((f) => {
+      const sel = el('select', {});
+      RANK_OPTS.forEach(([val, label]) => sel.append(el('option', { value: val, ...(f.minRank === val ? { selected: 'selected' } : {}) }, label)));
+      sel.addEventListener('change', () => { f.minRank = sel.value; });
+      const x = el('button', { type: 'button', class: 'filterchip__x', 'aria-label': 'Remove' }, '×');
+      x.addEventListener('click', () => { filters = filters.filter((y) => y !== f); repaint(); });
+      list.append(el('div', { class: 'adminfilter' },
+        el('span', { class: 'adminfilter__tag' }, f.tag),
+        el('span', { class: 'adminfilter__hint' }, 'visible to:'),
+        sel, x));
+    });
+  }
+  const entry = buildTagInput((t) => {
+    if (!filters.some((f) => f.tag === t)) { filters.push({ tag: t, minRank: 'user' }); repaint(); }
+  }, () => filters.map((f) => f.tag));
+
+  const saveBtn = el('button', { type: 'button', class: 'btn btn--primary' }, 'Save filter settings');
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true; msg.textContent = '';
+    try {
+      const d = await api('/admin/settings', { method: 'PATCH', body: {
+        filterName: nameInput.value, adminFilters: filters,
+      } });
+      state.filterName = d.settings.filterName;
+      msg.className = 'formmsg formmsg--ok'; msg.textContent = 'Filter settings saved.';
+      if (typeof updateFilterMenuToggle === 'function') updateFilterMenuToggle();
+    } catch (e) { msg.className = 'formmsg formmsg--error'; msg.textContent = e.message; }
+    finally { saveBtn.disabled = false; }
+  });
+
+  content.append(
+    el('div', { class: 'field' }, el('label', {}, 'Feature name'),
+      el('div', { class: 'field__hint', style: 'margin-bottom:6px' }, 'What this filter is called in the UI (e.g. NSFW, News, Confidential). Defaults to “Filter”.'),
+      nameInput),
+    el('hr', { class: 'account__rule' }),
+    el('div', { class: 'account__sectionlabel' }, 'Filtered tags'),
+    el('div', { class: 'field__hint', style: 'margin-bottom:10px' },
+      'Sites with these tags are hidden from viewers below the chosen rank. Logged-out visitors can’t turn this off.'),
+    entry,
+    list,
+    el('div', { style: 'margin-top:14px' }, saveBtn),
+    msg,
+  );
+  repaint();
+}
+
 async function renderUsersTab(content) {
   content.innerHTML = '';
   content.append(el('div', { class: 'placeholder' }, 'Loading users…'));
@@ -2432,8 +2620,24 @@ function syncChrome() {
     }
     $('#menuName').textContent = state.user.username;
     $('#menuRole').textContent = state.user.role;
+    updateFilterMenuToggle();
   }
   applyBackground();
+}
+
+// Show/refresh the filter on/off toggle in the user menu. Hidden unless the
+// user has at least one filter tag saved (otherwise there's nothing to toggle).
+function updateFilterMenuToggle() {
+  const btn = $('#filterToggleBtn');
+  if (!btn) return;
+  const u = state.user;
+  const has = u && Array.isArray(u.filterTags) && u.filterTags.length > 0;
+  btn.hidden = !has;
+  if (!has) return;
+  $('#filterToggleLabel').textContent = state.filterName || 'Filter';
+  const on = !!u.filterOn;
+  btn.setAttribute('aria-checked', on ? 'true' : 'false');
+  $('#filterToggleSwitch').classList.toggle('usermenu__switch--on', on);
 }
 
 // Apply the current user's background image (or clear it). Adds a body class
@@ -2766,7 +2970,22 @@ function init() {
   });
   document.addEventListener('click', () => { dd.hidden = true; trigger.setAttribute('aria-expanded', 'false'); });
   dd.addEventListener('click', (e) => e.stopPropagation());
-  $('#accountBtn').addEventListener('click', () => { dd.hidden = true; openSettingsPage(); });
+  $('#accountBtn').addEventListener('click', async () => {
+    dd.hidden = true;
+    // Refresh from the server so settings (theme, filter, etc.) reflect what's
+    // actually persisted, even if local state drifted.
+    try { const me = await api('/auth/me'); if (me.user) state.user = me.user; } catch {}
+    openSettingsPage();
+  });
+  $('#filterToggleBtn').addEventListener('click', async () => {
+    if (!state.user) return;
+    const on = !state.user.filterOn;
+    state.user.filterOn = on;
+    updateFilterMenuToggle();
+    try { await api('/auth/filter', { method: 'PATCH', body: { on } }); }
+    catch (e) { toast(e.message, true); }
+    loadSites();   // re-run search so the change takes effect immediately
+  });
   $('#logoutBtn').addEventListener('click', async () => {
     try { await api('/auth/logout', { method: 'POST' }); } catch {}
     state.user = null; state.csrf = null;
@@ -2818,6 +3037,7 @@ async function bootstrap() {
     state.heroAnimations = Array.isArray(cfg.heroAnimations) ? cfg.heroAnimations : [];
     state.defaultTheme = ['dark', 'light', 'custom'].includes(cfg.defaultTheme) ? cfg.defaultTheme : 'dark';
     state.defaultThemeColors = (cfg.defaultThemeColors && typeof cfg.defaultThemeColors === 'object') ? cfg.defaultThemeColors : {};
+    state.filterName = cfg.filterName || 'Filter';
     if (Array.isArray(cfg.taglines) && cfg.taglines.length) {
       const tag = cfg.taglines[Math.floor(Math.random() * cfg.taglines.length)];
       const tagEl = $('#heroTag');
